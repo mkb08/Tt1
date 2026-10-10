@@ -1,5 +1,7 @@
 # tt — a trading and copy-trading toolkit that runs on your phone (Termux)
 
+**Website:** https://tt1-rouge.vercel.app (interactive results dashboard)
+
 `tt` is a small Python toolkit for Android/Termux. It lets you:
 
 1. **Download** market data (no API key needed).
@@ -191,7 +193,7 @@ Android kills background apps to save battery. To keep the bot alive:
 
 ## Website
 
-The project site lives in `site/`: a static page with no build step, deployed on Vercel from this repo. Every push to the default branch redeploys it. To refresh its numbers after downloading new data with `tt fetch`, run:
+The project site (https://tt1-rouge.vercel.app) lives in `site/`: a static page with no build step, deployed on Vercel from this repo. Every push to the default branch redeploys it. To refresh its numbers after downloading new data with `tt fetch`, run:
 
 ```bash
 python scripts/build_site.py      # rewrites site/data/results.json
