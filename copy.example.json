@@ -1,0 +1,34 @@
+{
+  "dry_run": true,
+  "poll_seconds": 15,
+  "leader": {
+    "type": "feed",
+    "source": "state/leader.json",
+    "max_age_s": 900
+  },
+  "followers": [
+    {
+      "name": "paper-follower",
+      "exchange": "paper",
+      "paper_equity": 500,
+      "multiplier": 1.0,
+      "max_leverage": 1.0,
+      "min_notional": 10
+    },
+    {
+      "name": "bybit-sub1-testnet",
+      "exchange": "bybit",
+      "market_type": "swap",
+      "mode": "testnet",
+      "quote": "USDT",
+      "symbols": ["BTC/USDT:USDT"],
+      "api_key_env": "F1_API_KEY",
+      "secret_env": "F1_API_SECRET",
+      "multiplier": 1.0,
+      "max_leverage": 2.0,
+      "min_notional": 10,
+      "risk": {"max_drawdown": 0.25, "max_daily_loss": 0.10},
+      "on_halt": "flatten"
+    }
+  ]
+}

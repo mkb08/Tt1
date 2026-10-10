@@ -1,0 +1,10 @@
+# your real configs, keys, bot state and logs never go to git
+config.json
+copy.json
+.env
+*.env
+state/
+logs/
+data/*.csv
+__pycache__/
+*.pyc
