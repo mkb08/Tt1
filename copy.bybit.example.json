@@ -1,0 +1,36 @@
+{
+  "dry_run": true,
+  "poll_seconds": 15,
+  "price_source": "bybit",
+  "leader": {
+    "type": "feed",
+    "source": "state/leader.json",
+    "max_age_s": 900
+  },
+  "followers": [
+    {
+      "name": "paper-check",
+      "exchange": "paper",
+      "market_type": "swap",
+      "paper_equity": 500,
+      "fee": 0.00055,
+      "funding_8h": 0.0001,
+      "max_leverage": 1.0,
+      "min_notional": 10
+    },
+    {
+      "name": "bybit-sub1",
+      "exchange": "bybit",
+      "market_type": "swap",
+      "mode": "demo",
+      "symbols": ["BTC/USDT:USDT"],
+      "api_key_env": "BYBIT_SUB1_KEY",
+      "secret_env": "BYBIT_SUB1_SECRET",
+      "multiplier": 1.0,
+      "max_leverage": 1.0,
+      "min_notional": 10,
+      "risk": {"max_drawdown": 0.25, "max_daily_loss": 0.10},
+      "on_halt": "flatten"
+    }
+  ]
+}

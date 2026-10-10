@@ -1,0 +1,24 @@
+{
+  "mode": "paper",
+  "exchange": "bybit",
+  "market_type": "spot",
+  "symbol": "BTC/USDT",
+  "timeframe": "4h",
+  "strategy": "trend",
+  "params": {"entry": 55, "exit": 20, "atr_mult": 3.0},
+  "risk": {
+    "risk_per_trade": 0.01,
+    "max_leverage": 1.0,
+    "max_daily_loss": 0.03,
+    "max_drawdown": 0.20
+  },
+  "paper_equity": 200,
+  "fee": 0.001,
+  "slippage": 0.0005,
+  "poll_seconds": 60,
+  "state_file": "state/bybit_spot_bot.json",
+  "paper_state_file": "state/bybit_spot_paper.json",
+  "publish_file": "state/leader.json",
+  "api_key_env": "BYBIT_API_KEY",
+  "secret_env": "BYBIT_API_SECRET"
+}

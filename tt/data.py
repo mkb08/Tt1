@@ -81,7 +81,7 @@ def fetch_history(symbol: str, timeframe: str, days: float,
                   exchange: str = "binance") -> list[Candle]:
     """Download `days` of history, paging forward from the start.
 
-    Binance data comes from its public mirror with the stdlib alone; any
+    Binance and Bybit data use their public APIs with the stdlib alone; any
     other exchange needs ccxt.
     """
     if timeframe not in TIMEFRAME_MS:
@@ -89,6 +89,9 @@ def fetch_history(symbol: str, timeframe: str, days: float,
     step = TIMEFRAME_MS[timeframe]
     since = int(time.time() * 1000 - days * 86_400_000)
 
+    if exchange == "bybit":
+        from . import bybit
+        return drop_open_candle(bybit.history(symbol, timeframe, days), timeframe)
     if exchange == "binance":
         page = lambda s: _fetch_binance_page(symbol, timeframe, s, 1000)  # noqa: E731
     else:
@@ -117,6 +120,9 @@ def fetch_recent(symbol: str, timeframe: str, limit: int = 500,
         candles = _fetch_ccxt_page(ccxt_exchange, symbol, timeframe, None, limit)
     elif exchange == "binance":
         candles = _fetch_binance_page(symbol, timeframe, None, limit)
+    elif exchange == "bybit":
+        from . import bybit
+        candles = bybit.klines(symbol, timeframe, limit=limit)
     else:
         candles = _fetch_ccxt_page(_ccxt_public(exchange), symbol, timeframe, None, limit)
     return drop_open_candle(candles, timeframe)
@@ -134,6 +140,11 @@ def fetch_price(symbol: str, exchange: str = "binance", ccxt_exchange=None) -> f
     """Last traded price."""
     if ccxt_exchange is not None:
         return float(ccxt_exchange.fetch_ticker(symbol)["last"])
+    if exchange == "bybit":
+        from . import bybit
+        return bybit.ticker(symbol)["last"]
+    if exchange != "binance":
+        return float(_ccxt_public(exchange).fetch_ticker(symbol)["last"])
     url = ("https://data-api.binance.vision/api/v3/ticker/price?symbol="
            + _binance_symbol(symbol))
     req = urllib.request.Request(url, headers={"User-Agent": "tt/0.1"})

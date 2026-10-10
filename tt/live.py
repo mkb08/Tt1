@@ -147,6 +147,8 @@ class Bot:
         ccxt_ex = getattr(self.broker, "ex", None)
         self.n.alert(f"bot started: {self.cfg.get('mode')} {self.symbol} {self.tf} "
                      f"{self.strategy.name} {self.strategy.params()}")
+        for note in getattr(self.broker, "setup_notes", []):
+            self.n.log(f"exchange setup: {note}")
         errors = 0
         while True:
             try:

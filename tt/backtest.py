@@ -6,7 +6,9 @@ Execution model (deliberately conservative):
   * every fill pays the taker fee plus slippage;
   * stops are checked against each bar's high/low; a gap through the stop
     fills at the open, not at the stop price;
-  * if a bar both opens a trade and touches its stop, the stop wins.
+  * if a bar both opens a trade and touches its stop, the stop wins;
+  * perpetual futures pay or receive funding while a position is open,
+    either at a constant rate or from a real funding-rate history.
 """
 
 from __future__ import annotations
@@ -33,7 +35,8 @@ class Trade:
     stop: float | None = None
     risk: float = 0.0     # money at risk at entry (for R multiples)
     fees: float = 0.0
-    pnl: float = 0.0      # net of fees
+    funding: float = 0.0  # paid (+) or received (-) on perpetuals
+    pnl: float = 0.0      # net of fees and funding
     reason: str = ""
 
 
@@ -80,6 +83,7 @@ class Result:
             "avg_r": statistics.mean(r_mults) if r_mults else 0.0,
             "exposure": self.bars_in_market / max(n, 1),
             "fees_paid": sum(t.fees for t in self.trades),
+            "funding_paid": sum(t.funding for t in self.trades),
             "buy_hold_return": self.buy_hold_return,
             "buy_hold_mdd": self.buy_hold_mdd,
             "years": years,
@@ -96,12 +100,21 @@ def max_drawdown(equity: list[float]) -> float:
     return mdd
 
 
+EIGHT_HOURS_MS = 8 * 3_600_000
+
+
 def backtest(candles: list[Candle], strategy: Strategy, *,
              equity: float = 1000.0, risk: RiskConfig | None = None,
              fee: float = 0.001, slippage: float = 0.0005,
+             funding_8h: float = 0.0,
+             funding_events: list[tuple[int, float]] | None = None,
              start: int = 0) -> Result:
     """Run `strategy` over `candles`. Trading begins at bar max(start, warmup);
-    earlier bars are only used to warm up indicators."""
+    earlier bars are only used to warm up indicators.
+
+    Funding (perpetuals only): pass `funding_events` [(ts, rate)] for real
+    history, or `funding_8h` as a constant rate per 8 hours. Positive rates
+    mean longs pay and shorts receive."""
     risk = risk or RiskConfig()
     strategy.prepare(candles)
     guard = RiskGuard(risk)
@@ -116,6 +129,8 @@ def backtest(candles: list[Candle], strategy: Strategy, *,
     pos: Trade | None = None
     entry_bar = 0
     pending = None  # Signal decided on the previous close
+    events = funding_events or []
+    ev = 0
 
     def fill_price(px: float, side: int) -> float:
         return px * (1 + slippage * side)
@@ -126,7 +141,7 @@ def backtest(candles: list[Candle], strategy: Strategy, *,
         t.exit, t.exit_ts, t.reason = fill, ts, reason
         t.fees += f
         gross = t.side * t.qty * (fill - t.entry)
-        t.pnl = gross - t.fees
+        t.pnl = gross - t.fees - t.funding
         res.trades.append(t)
         return gross - f
 
@@ -162,6 +177,22 @@ def backtest(candles: list[Candle], strategy: Strategy, *,
                 else:
                     pos.stop = min(pos.stop, pending.stop)
             pending = None
+
+        # funding for the time this bar spans (charged to cash as it accrues)
+        bar_end = (candles[i + 1].ts if i + 1 < len(candles)
+                   else bar.ts + (bar.ts - candles[i - 1].ts if i else 0))
+        rate = 0.0
+        if events:
+            while ev < len(events) and events[ev][0] < bar_end:
+                if events[ev][0] >= bar.ts:
+                    rate += events[ev][1]
+                ev += 1
+        elif funding_8h:
+            rate = funding_8h * (bar_end - bar.ts) / EIGHT_HOURS_MS
+        if pos and rate:
+            paid = pos.side * pos.qty * bar.open * rate
+            pos.funding += paid
+            cash -= paid
 
         # 2) protective stop inside this bar
         if pos and pos.stop is not None:

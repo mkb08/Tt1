@@ -11,6 +11,8 @@
 
 The core uses only the Python standard library, so it installs in seconds on a phone. `ccxt` is needed only for live exchange access.
 
+**Trading from Kenya on Bybit?** Start with [docs/BYBIT_KENYA.md](docs/BYBIT_KENYA.md). It covers the 4 November 2026 licensing deadline, tax, M-Pesa funding, API keys, demo trading, minimum capital, and ready-made Bybit configs.
+
 ---
 
 ## Read this first: what "profitable" honestly means
@@ -81,16 +83,21 @@ python -m tt compare --data data/btc_4h.csv
 
 # 3. Look at one closely (adds Monte Carlo drawdown estimates)
 python -m tt backtest --data data/btc_4h.csv --strategy trend --params '{"entry": 55, "exit": 20}'
+#    perpetual futures: count funding too, e.g. --fee 0.00055 --funding 0.0001,
+#    or real history: --funding-csv from `python -m tt fetch-funding`
 
 # 4. The honest test: walk-forward, out-of-sample only
 python -m tt walkforward --data data/btc_4h.csv --strategy trend
 
-# 5. Paper trade on live prices for 1–3 months
+# 5. Pre-flight: exchange minimums, the account size you need, API key safety
 cp config.example.json config.json      # edit symbol / strategy / risk
+python -m tt check --config config.json
+
+# 6. Paper trade on live prices for 1–3 months
 scripts/run.sh paper --config config.json
 
-# 6. Testnet, then live with money you can afford to lose
-#    set "mode": "testnet" (or "live") in config.json, export your keys:
+# 7. Demo or testnet, then live with money you can afford to lose
+#    set "mode": "demo" (or "testnet" / "live") in config.json, export your keys:
 export TT_API_KEY=...  TT_API_SECRET=...
 scripts/run.sh live --config config.json --i-accept-the-risk
 ```
@@ -188,6 +195,6 @@ Android kills background apps to save battery. To keep the bot alive:
 python -m unittest discover -s tests -t .
 ```
 
-Layout: `tt/data.py` (candles, download), `indicators.py`, `strategies.py`, `risk.py`, `backtest.py` (backtest, walk-forward, Monte Carlo), `broker.py` (paper + ccxt), `live.py` (bot), `copytrade.py`, `notify.py`, `__main__.py` (CLI).
+Layout: `tt/data.py` (candles, download), `bybit.py` (Bybit public data, stdlib), `check.py` (pre-flight), `indicators.py`, `strategies.py`, `risk.py`, `backtest.py` (backtest, walk-forward, Monte Carlo), `broker.py` (paper + ccxt), `live.py` (bot), `copytrade.py`, `notify.py`, `__main__.py` (CLI).
 
 *Nothing here is financial advice. Trading can lose more than you expect. Only trade money you can afford to lose.*

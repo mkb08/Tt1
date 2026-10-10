@@ -223,7 +223,9 @@ def build_engine(cfg: dict) -> CopyEngine:
             on_halt=fc.get("on_halt", "flatten"),
             risk=RiskConfig.from_dict({"max_drawdown": 0.25, "max_daily_loss": 0.10,
                                        **fc.get("risk", {})}))
+        fc = {"price_source": cfg.get("price_source", "binance"), **fc}
         broker = make_broker(fc, state_path=f"state/paper_{fc['name']}.json")
         followers.append((fcfg, broker))
-    return CopyEngine(leader, followers, lambda s: fetch_price(s),
+    src = cfg.get("price_source", "binance")
+    return CopyEngine(leader, followers, lambda s: fetch_price(s, src),
                       dry_run=cfg.get("dry_run", True))

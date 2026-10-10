@@ -34,7 +34,8 @@ def print_metrics(name: str, m: dict) -> None:
     print(f"  win rate      {m['win_rate']:.0%}   profit factor {m['profit_factor']:.2f}   "
           f"avg R {m['avg_r']:+.2f}")
     print(f"  exposure      {m['exposure']:.0%} of bars in the market")
-    print(f"  fees paid     {m['fees_paid']:.2f}")
+    print(f"  fees paid     {m['fees_paid']:.2f}" + (f"   funding paid {m['funding_paid']:+.2f}"
+                                                       if m['funding_paid'] else ""))
     if m["halted"]:
         print(f"  HALTED        {m['halted']}")
 
@@ -52,10 +53,21 @@ def common_bt_args(p):
     p.add_argument("--slippage", type=float, default=0.0005)
     p.add_argument("--risk", type=float, default=0.01, help="equity risked per trade")
     p.add_argument("--leverage", type=float, default=1.0, help="max notional / equity")
+    p.add_argument("--funding", type=float, default=0.0,
+                   help="perps: constant funding rate per 8h, e.g. 0.0001 (0.01%%)")
+    p.add_argument("--funding-csv", help="perps: real funding history from `fetch-funding`")
+
+
+def load_funding(path: str) -> list[tuple[int, float]]:
+    import csv
+    with open(path, newline="") as f:
+        return sorted((int(r["ts"]), float(r["rate"])) for r in csv.DictReader(f))
 
 
 def bt_kwargs(args) -> dict:
+    events = load_funding(args.funding_csv) if getattr(args, "funding_csv", None) else None
     return {"equity": args.equity, "fee": args.fee, "slippage": args.slippage,
+            "funding_8h": getattr(args, "funding", 0.0), "funding_events": events,
             "risk": RiskConfig(risk_per_trade=args.risk, max_leverage=args.leverage,
                                max_daily_loss=1.0, max_drawdown=1.0)}
 
@@ -64,6 +76,28 @@ def cmd_fetch(args):
     candles = fetch_history(args.symbol, args.timeframe, args.days, args.exchange)
     save_csv(args.out, candles)
     print(f"saved {len(candles)} candles to {args.out}")
+
+
+def cmd_fetch_funding(args):
+    if args.exchange != "bybit":
+        sys.exit("fetch-funding currently supports --exchange bybit")
+    from . import bybit
+    rows = bybit.funding_history(args.symbol, args.days)
+    import csv
+    with open(args.out, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["ts", "rate"])
+        w.writerows(rows)
+    if rows:
+        avg = sum(r for _, r in rows) / len(rows)
+        print(f"saved {len(rows)} funding payments to {args.out}; average {avg:+.4%} per payment")
+
+
+def cmd_check(args):
+    from .check import run
+    with open(args.config) as f:
+        cfg = json.load(f)
+    sys.exit(1 if run(cfg) else 0)
 
 
 def cmd_backtest(args):
@@ -156,6 +190,17 @@ def main(argv=None):
     p.add_argument("--out", required=True)
     p.set_defaults(fn=cmd_fetch)
 
+    p = sub.add_parser("fetch-funding", help="download perpetual funding history to CSV")
+    p.add_argument("--symbol", default="BTC/USDT:USDT")
+    p.add_argument("--days", type=float, default=1460)
+    p.add_argument("--exchange", default="bybit")
+    p.add_argument("--out", required=True)
+    p.set_defaults(fn=cmd_fetch_funding)
+
+    p = sub.add_parser("check", help="pre-flight: market minimums, account size, API key safety")
+    p.add_argument("--config", default="config.json")
+    p.set_defaults(fn=cmd_check)
+
     p = sub.add_parser("backtest", help="backtest one strategy")
     common_bt_args(p)
     p.add_argument("--strategy", choices=sorted(STRATEGIES), default="trend")
@@ -176,10 +221,10 @@ def main(argv=None):
 
     p = sub.add_parser("demo", help="offline smoke test")
     p.set_defaults(fn=cmd_demo, equity=1000.0, fee=0.001, slippage=0.0005,
-                   risk=0.01, leverage=1.0)
+                   risk=0.01, leverage=1.0, funding=0.0, funding_csv=None)
 
     for name, helptext in (("paper", "run the bot on live prices with a simulated account"),
-                           ("live", "run the bot per config mode (testnet or live)")):
+                           ("live", "run the bot per config mode: demo, testnet or live")):
         p = sub.add_parser(name, help=helptext)
         p.add_argument("--config", default="config.json")
         p.add_argument("--i-accept-the-risk", action="store_true")

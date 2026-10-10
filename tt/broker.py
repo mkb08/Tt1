@@ -5,9 +5,12 @@ or testnet exchange accounts. Quantities are signed base-currency units
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from typing import Callable
+
+EIGHT_HOURS_MS = 8 * 3_600_000
 
 
 def load_json(path: str, default):
@@ -33,23 +36,44 @@ class PaperBroker:
     """Simulated account filled at live prices, with fees and slippage.
 
     Uses margin-style accounting: equity = cash + unrealised PnL, which works
-    the same for longs and shorts.
+    the same for longs and shorts. For perpetuals, `funding_8h` charges
+    longs (and credits shorts) continuously at that rate per 8 hours.
     """
 
     def __init__(self, price_fn: Callable[[str], float], equity: float = 1000.0,
                  fee: float = 0.001, slippage: float = 0.0005,
-                 state_path: str | None = None, allow_short: bool = True):
+                 state_path: str | None = None, allow_short: bool = True,
+                 funding_8h: float = 0.0, clock: Callable[[], float] = time.time):
         self.price_fn, self.fee, self.slippage = price_fn, fee, slippage
         self.state_path, self.allow_short = state_path, allow_short
+        self.funding_8h, self.clock = funding_8h, clock
         st = load_json(state_path, None) if state_path else None
         self.cash = st["cash"] if st else equity
         self.pos: dict[str, dict] = st["positions"] if st else {}
         self.fills: list[dict] = st.get("fills", []) if st else []
+        self.funding_paid = st.get("funding_paid", 0.0) if st else 0.0
+        self.accrued_to = st.get("accrued_to") if st else None
+
+    def _now_ms(self) -> int:
+        return int(self.clock() * 1000)
 
     def _save(self):
         if self.state_path:
             save_json(self.state_path, {"cash": self.cash, "positions": self.pos,
-                                        "fills": self.fills[-500:]})
+                                        "fills": self.fills[-500:],
+                                        "funding_paid": self.funding_paid,
+                                        "accrued_to": self.accrued_to})
+
+    def _accrue_funding(self):
+        now = self._now_ms()
+        if self.funding_8h and self.accrued_to is not None:
+            frac = (now - self.accrued_to) / EIGHT_HOURS_MS
+            for sym, p in self.pos.items():
+                if p["qty"]:
+                    paid = p["qty"] * self.price(sym) * self.funding_8h * frac
+                    self.cash -= paid
+                    self.funding_paid += paid
+        self.accrued_to = now
 
     def price(self, symbol: str) -> float:
         return self.price_fn(symbol)
@@ -61,6 +85,7 @@ class PaperBroker:
         return {s: p["qty"] for s, p in self.pos.items() if p["qty"]}
 
     def equity(self) -> float:
+        self._accrue_funding()
         upnl = sum(p["qty"] * (self.price(s) - p["entry"]) for s, p in self.pos.items() if p["qty"])
         return self.cash + upnl
 
@@ -71,6 +96,7 @@ class PaperBroker:
         return 1.0
 
     def market_order(self, symbol: str, qty: float, reduce_only: bool = False) -> dict:
+        self._accrue_funding()
         qty = self.round_qty(symbol, qty)
         cur = self.position(symbol)
         if reduce_only:
@@ -94,7 +120,7 @@ class PaperBroker:
         p["qty"] = round(new, 12)
         if p["qty"] == 0:
             p["entry"] = 0.0
-        fill = {"ts": int(time.time() * 1000), "symbol": symbol, "qty": qty,
+        fill = {"ts": self._now_ms(), "symbol": symbol, "qty": qty,
                 "price": px, "fee": fee}
         self.fills.append(fill)
         self._save()
@@ -106,13 +132,20 @@ class CCXTBroker:
 
     market_type "spot": long-only; the position is the base-asset balance, so
     use a dedicated (sub-)account.
-    market_type "swap": linear perpetual futures; supports shorts.
+    market_type "swap": linear perpetual futures; supports shorts. The
+    account is switched to one-way position mode and the exchange leverage
+    is set to `leverage` for each symbol.
+
+    demo=True uses the exchange's demo-trading environment (real prices,
+    fake money; Bybit and Binance support it). testnet=True uses the
+    separate testnet.
     """
 
     def __init__(self, exchange_id: str, api_key: str = "", secret: str = "",
                  password: str = "", market_type: str = "spot",
                  testnet: bool = False, quote: str = "USDT",
-                 symbols: list[str] | None = None, exchange=None):
+                 symbols: list[str] | None = None, exchange=None,
+                 demo: bool = False, leverage: float | None = None):
         if exchange is None:
             import ccxt  # type: ignore
             opts = {"apiKey": api_key, "secret": secret, "enableRateLimit": True,
@@ -122,10 +155,29 @@ class CCXTBroker:
             exchange = getattr(ccxt, exchange_id)(opts)
             if testnet:
                 exchange.set_sandbox_mode(True)
+            elif demo:
+                exchange.enable_demo_trading(True)
         self.ex = exchange
         self.market_type, self.quote = market_type, quote
         self.symbols = list(symbols or [])
+        self.setup_notes: list[str] = []
         self.ex.load_markets()
+        if market_type == "swap":
+            self._setup_swap(leverage)
+
+    def _setup_swap(self, leverage: float | None) -> None:
+        """Best effort: exchanges reject these calls when nothing changes or a
+        position is open, so failures are recorded rather than raised."""
+        for s in self.symbols:
+            try:
+                self.ex.set_position_mode(False, s)  # one-way: one net position per symbol
+            except Exception as e:  # noqa: BLE001
+                self.setup_notes.append(f"{s} position mode: {e}")
+            if leverage:
+                try:
+                    self.ex.set_leverage(leverage, s)
+                except Exception as e:  # noqa: BLE001
+                    self.setup_notes.append(f"{s} leverage {leverage}: {e}")
 
     def _contract_size(self, symbol: str) -> float:
         return float(self.ex.market(symbol).get("contractSize") or 1.0)
@@ -196,11 +248,13 @@ def make_broker(cfg: dict, price_fn: Callable[[str], float] | None = None,
     if cfg.get("mode") == "paper" or exch == "paper":
         if price_fn is None:
             from .data import fetch_price
-            price_fn = lambda s: fetch_price(s)  # noqa: E731
+            src = cfg.get("price_source", exch if exch != "paper" else "binance")
+            price_fn = lambda s: fetch_price(s, src)  # noqa: E731
+        swap = cfg.get("market_type", "spot") == "swap"
         return PaperBroker(price_fn, equity=cfg.get("paper_equity", 1000.0),
                            fee=cfg.get("fee", 0.001), slippage=cfg.get("slippage", 0.0005),
-                           state_path=state_path,
-                           allow_short=cfg.get("market_type", "spot") != "spot")
+                           state_path=state_path, allow_short=swap,
+                           funding_8h=cfg.get("funding_8h", 0.0) if swap else 0.0)
     env = os.environ.get
     key = env(cfg.get("api_key_env", "TT_API_KEY"), "")
     secret = env(cfg.get("secret_env", "TT_API_SECRET"), "")
@@ -211,4 +265,15 @@ def make_broker(cfg: dict, price_fn: Callable[[str], float] | None = None,
     return CCXTBroker(exch, key, secret, env(cfg.get("password_env", "TT_API_PASSWORD"), ""),
                       market_type=cfg.get("market_type", "spot"),
                       testnet=cfg.get("mode") == "testnet" or cfg.get("testnet", False),
-                      quote=cfg.get("quote", "USDT"), symbols=symbols)
+                      demo=cfg.get("mode") == "demo",
+                      quote=cfg.get("quote", "USDT"), symbols=symbols,
+                      leverage=exchange_leverage(cfg))
+
+
+def exchange_leverage(cfg: dict) -> int:
+    """Leverage to set on the exchange for perps. The bot's own cap
+    (risk.max_leverage) limits position size; this only decides how much margin
+    a position locks. One step above the cap leaves room for fees, so a
+    full-size 1x position isn't rejected for insufficient margin."""
+    cap = cfg.get("max_leverage") or (cfg.get("risk") or {}).get("max_leverage", 1.0)
+    return int(cfg.get("exchange_leverage") or math.ceil(cap) + 1)
