@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tt trading toolkit</title>
+<meta name="description" content="An honest, phone-friendly trading and copy-trading toolkit for Termux: backtests with real costs, walk-forward tests, paper trading, Bybit support and risk limits.">
+<meta property="og:title" content="tt trading toolkit">
+<meta property="og:description" content="Backtest, paper trade and copy trade from your phone, with the real numbers shown.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M6 22l6-7 5 4 9-11' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --raised: #ffffff;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --muted: #6f6e69;
+  --axis: #898781;
+  --grid: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --accent: #2a78d6;
+  --accent-ink: #1c5cab;
+  --good: #006300;
+  --bad: #c62f2f;
+  --warn-bg: #fff6e0;
+  --warn-border: #eda100;
+  --code-bg: #f0efec;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --raised: #1f1f1e;
+    --text: #f0efec;
+    --text-2: #c3c2b7;
+    --muted: #a3a29b;
+    --axis: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --accent: #3987e5;
+    --accent-ink: #86b6ef;
+    --good: #0ca30c;
+    --bad: #e66767;
+    --warn-bg: #2a2211;
+    --warn-border: #c98500;
+    --code-bg: #232322;
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --raised: #1f1f1e;
+  --text: #f0efec;
+  --text-2: #c3c2b7;
+  --muted: #a3a29b;
+  --axis: #898781;
+  --grid: #2c2c2a;
+  --baseline: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --accent: #3987e5;
+  --accent-ink: #86b6ef;
+  --good: #0ca30c;
+  --bad: #e66767;
+  --warn-bg: #2a2211;
+  --warn-border: #c98500;
+  --code-bg: #232322;
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --shadow: none;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+a { color: var(--accent-ink); }
+a:hover { text-decoration-thickness: 2px; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 720px) { .wrap { padding: 0 24px; } }
+
+header.top {
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in srgb, var(--page) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+header.top .wrap { display: flex; align-items: center; gap: 16px; height: 56px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--text); text-decoration: none; }
+.brand svg { width: 26px; height: 26px; }
+nav.links { margin-left: auto; display: flex; gap: 18px; font-size: 14px; }
+nav.links a { color: var(--text-2); text-decoration: none; }
+nav.links a:hover { color: var(--text); }
+@media (max-width: 640px) { nav.links a:not(.gh) { display: none; } }
+
+.hero { padding-top: 56px; padding-bottom: 24px; }
+@media (max-width: 520px) { .hero { padding-top: 36px; } }
+.hero h1 { font-size: clamp(30px, 5.4vw, 48px); line-height: 1.1; margin: 0 0 16px; letter-spacing: -0.02em; max-width: 18ch; }
+.hero p.lede { font-size: clamp(17px, 2.2vw, 19px); color: var(--text-2); max-width: 60ch; margin: 0 0 24px; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 10px;
+  font-weight: 600; font-size: 15px; text-decoration: none; border: 1px solid var(--border);
+  color: var(--text); background: var(--raised);
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn:hover { filter: brightness(1.05); }
+
+section { padding: 40px 0; scroll-margin-top: 56px; }
+section h2 { font-size: clamp(22px, 3.4vw, 28px); margin: 0 0 8px; letter-spacing: -0.01em; }
+section .sub { color: var(--text-2); margin: 0 0 24px; max-width: 70ch; }
+
+.callout {
+  background: var(--warn-bg); border: 1px solid var(--warn-border); border-left-width: 4px;
+  border-radius: 12px; padding: 16px 20px;
+}
+.callout h3 { margin: 0 0 8px; font-size: 17px; }
+.callout ul { margin: 0; padding-left: 20px; }
+.callout li + li { margin-top: 6px; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); }
+.pad { padding: 20px; }
+@media (max-width: 520px) { .pad { padding: 16px 12px; } }
+
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+.seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--code-bg); border: 1px solid var(--border); }
+.seg button {
+  appearance: none; border: 0; background: transparent; color: var(--text-2);
+  font-family: inherit; font-weight: 600; font-size: 14px; line-height: 1;
+  padding: 9px 16px; border-radius: 8px; cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--raised); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.filters .note { font-size: 13px; color: var(--muted); }
+
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { padding: 16px 18px; }
+.tile .label { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-2); }
+.tile .key { width: 16px; height: 0; border-top: 3px solid; border-radius: 2px; }
+.tile .value { font-size: 32px; font-weight: 650; margin: 6px 0 2px; letter-spacing: -0.01em; }
+.tile .meta { font-size: 14px; color: var(--text-2); }
+.tile .meta b { color: var(--text); font-weight: 600; }
+@media (max-width: 720px) {
+  .tiles { gap: 8px; }
+  .tile { padding: 12px 10px; }
+  .tile .label { font-size: 12px; gap: 6px; }
+  .tile .key { width: 10px; }
+  .tile .value { font-size: 21px; }
+  .tile .meta { font-size: 12px; }
+  .tile .meta .trades { display: none; }
+}
+
+.charts { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 16px; }
+@media (min-width: 900px) { .charts { grid-template-columns: 1fr 1fr; } }
+.chart-card h3 { margin: 0; font-size: 16px; }
+.chart-card .desc { margin: 2px 0 10px; font-size: 13px; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--text-2); margin-bottom: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; width: 16px; border-top: 2px solid; border-radius: 1px; }
+.plot { position: relative; }
+.plot svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; }
+.plot svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.tip {
+  position: absolute; pointer-events: none; z-index: 5; min-width: 150px;
+  background: var(--raised); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.14); padding: 8px 10px; font-size: 13px; opacity: 0; transition: opacity .08s;
+}
+.tip .date { color: var(--muted); margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+.tip .row { display: flex; align-items: center; gap: 8px; }
+.tip .row i { width: 12px; border-top: 2px solid; }
+.tip .row b { font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
+.tip .row span { color: var(--text-2); }
+
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { padding: 9px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+thead th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+tbody tr:last-child td { border-bottom: 0; }
+table.compact th, table.compact td { padding-left: 6px; padding-right: 6px; }
+table.compact th:first-child, table.compact td:first-child { padding-left: 0; }
+table.compact th:last-child, table.compact td:last-child { padding-right: 0; }
+td.pos { color: var(--good); }
+td.neg { color: var(--bad); }
+td .sw { display: inline-block; width: 12px; border-top: 2px solid; margin-right: 8px; vertical-align: middle; }
+.cap { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+.two { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 900px) { .two { grid-template-columns: 1fr 1fr; } }
+.two > *, .charts > *, .tiles > *, .kenya > *, .features > * { min-width: 0; }
+.two h3 { margin: 0 0 4px; font-size: 16px; }
+.two .desc { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+
+.features { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.features .card { padding: 18px; }
+.features h3 { margin: 0 0 6px; font-size: 16px; }
+.features p { margin: 0; color: var(--text-2); font-size: 15px; }
+
+pre {
+  position: relative; margin: 0; padding: 16px; padding-right: 56px; overflow-x: auto; border-radius: 12px;
+  background: var(--code-bg); border: 1px solid var(--border); font: 13.5px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+pre .c { color: var(--muted); }
+.copy {
+  position: absolute; top: 10px; right: 10px; font-family: inherit; font-weight: 600; font-size: 12px; line-height: 1;
+  padding: 7px 9px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--raised); color: var(--text-2); cursor: pointer;
+}
+ol.steps { padding-left: 20px; margin: 16px 0 0; color: var(--text-2); }
+ol.steps li + li { margin-top: 6px; }
+ol.steps b { color: var(--text); }
+
+.kenya { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 820px) { .kenya { grid-template-columns: 1fr 1fr; } }
+.kenya .card { padding: 18px; }
+.kenya h3 { margin: 0 0 6px; font-size: 16px; }
+.kenya p, .kenya li { color: var(--text-2); font-size: 15px; }
+.kenya p { margin: 0; }
+.kenya ul { margin: 0; padding-left: 18px; }
+.kenya .date { font-weight: 700; color: var(--text); }
+
+footer { padding: 32px 0 48px; border-top: 1px solid var(--border); margin-top: 24px; color: var(--muted); font-size: 14px; }
+footer p { margin: 0 0 8px; max-width: 75ch; }
+.loading { opacity: .5; }
+.err { color: var(--bad); }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M6 22l6-7 5 4 9-11" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      tt
+    </a>
+    <nav class="links" aria-label="Sections">
+      <a href="#results">Results</a>
+      <a href="#features">What it does</a>
+      <a href="#install">Install</a>
+      <a href="#kenya">Bybit · Kenya</a>
+      <a class="gh" href="https://github.com/mkb08/Tt1">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <h1>A trading bot for your phone that shows you the real numbers.</h1>
+    <p class="lede">tt runs in Termux on Android. It backtests strategies with real fees, slippage and funding, tests them on data they never saw, paper trades on live prices, and only then trades or copy-trades on Bybit and 100+ other exchanges, with hard loss limits.</p>
+    <div class="cta">
+      <a class="btn primary" href="#install">Install on Termux</a>
+      <a class="btn" href="#results">See the results</a>
+      <a class="btn" href="https://github.com/mkb08/Tt1">View source</a>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="callout" role="note">
+      <h3>No system is guaranteed to make money</h3>
+      <ul>
+        <li>EU brokers must disclose that roughly 70–80% or more of retail CFD accounts lose money.</li>
+        <li>Of Brazilian day traders who kept going for more than 300 days, 97% lost money (Chague, De-Losso &amp; Giovannetti, 2019).</li>
+        <li>Copy-trading leaderboards show survivors, not the leaders who blew up. tt is built to find out whether an idea works <em>before</em> it touches money.</li>
+      </ul>
+    </div>
+  </div>
+
+  <section id="results">
+    <div class="wrap">
+      <h2>Backtest results on 6 years of real data</h2>
+      <p class="sub">Each strategy starts with 1,000 USDT, risks 1% of the account per trade and never uses leverage. Every fill pays a 0.1% fee and 0.05% slippage. Buy &amp; hold is shown for comparison: it made far more, but fell much further on the way.</p>
+
+      <div class="filters">
+        <div class="seg" role="group" aria-label="Market">
+          <button type="button" data-m="BTC" aria-pressed="true">BTC</button>
+          <button type="button" data-m="ETH" aria-pressed="false">ETH</button>
+          <button type="button" data-m="SOL" aria-pressed="false">SOL</button>
+        </div>
+        <span class="note" id="period">Loading…</span>
+      </div>
+
+      <div class="tiles" id="tiles"></div>
+
+      <div class="charts">
+        <div class="card pad chart-card">
+          <h3>Growth of 1,000 USDT</h3>
+          <p class="desc">Log scale, so equal percentage moves look the same size</p>
+          <div class="legend" data-for="growth"></div>
+          <div class="plot" id="growth"></div>
+        </div>
+        <div class="card pad chart-card">
+          <h3>Drop from previous peak</h3>
+          <p class="desc">How far each was below its own high at every point</p>
+          <div class="legend" data-for="dd"></div>
+          <div class="plot" id="dd"></div>
+        </div>
+      </div>
+
+      <div class="card pad">
+        <h3 style="margin:0 0 4px;font-size:16px">All strategies</h3>
+        <p class="cap" style="margin:0 0 10px">The <b>out-of-sample</b> column is the honest one. The strategy is re-tuned on past data, then traded on the next 15 months it never saw, four times over.</p>
+        <div class="table-wrap"><table id="table" aria-label="Strategy results"></table></div>
+      </div>
+
+      <div class="two" style="margin-top:12px">
+        <div class="card pad">
+          <h3>Spot vs perpetual futures (Bybit costs)</h3>
+          <p class="desc">Buy-only unless marked. Perps pay a 0.055% fee plus 0.01% funding every 8 hours on longs.</p>
+          <div class="table-wrap"><table id="perp" class="compact" aria-label="Spot versus perpetual results"></table></div>
+        </div>
+        <div class="card pad">
+          <h3>What the numbers say</h3>
+          <ul id="takeaways" style="margin:0;padding-left:18px;color:var(--text-2);font-size:15px"></ul>
+        </div>
+      </div>
+      <p class="cap" id="settings"></p>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>What it does</h2>
+      <p class="sub">Pure Python standard library at its core, so it installs in seconds on a phone. ccxt is only needed to place real orders.</p>
+      <div class="features">
+        <div class="card"><h3>Honest backtests</h3><p>Fills at the next bar, fees, slippage, gaps through stops and perpetual funding. Monte Carlo reshuffles estimate how bad drawdowns could get.</p></div>
+        <div class="card"><h3>Walk-forward testing</h3><p>Tunes parameters on the past and judges them only on unseen data, which is the best guard against curve-fitting.</p></div>
+        <div class="card"><h3>Paper and demo trading</h3><p>Trade live prices with fake money. Bybit demo mode is supported: real order handling, no real funds.</p></div>
+        <div class="card"><h3>Risk limits that bite</h3><p>Positions are sized so a stop costs 1% of the account. Trading pauses after a daily loss limit, and everything is closed at a maximum drawdown.</p></div>
+        <div class="card"><h3>Copy trading</h3><p>Mirrors a leader's positions into many follower accounts, each with its own size, leverage cap and kill switch. It corrects itself after missed updates.</p></div>
+        <div class="card"><h3>Pre-flight check</h3><p><code>tt check</code> reads live exchange minimums, tells you the account size you need, and flags API keys that can withdraw money.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="wrap">
+      <h2>Install on Termux</h2>
+      <p class="sub">Get Termux from F-Droid or its GitHub releases, then:</p>
+      <pre id="code"><button class="copy" type="button" data-copy="code">Copy</button><span class="c"># one-time setup</span>
+pkg install -y git
+git clone https://github.com/mkb08/Tt1 &amp;&amp; cd Tt1
+bash install_termux.sh --ccxt
+
+<span class="c"># test, then paper trade on live Bybit prices</span>
+python -m tt fetch --exchange bybit --symbol BTC/USDT --timeframe 4h --days 1460 --out data/btc.csv
+python -m tt walkforward --data data/btc.csv --strategy trend
+cp config.bybit-spot.example.json config.json
+python -m tt check --config config.json
+scripts/run.sh paper --config config.json</pre>
+      <ol class="steps">
+        <li><b>Backtest and walk-forward.</b> Drop anything that only works in-sample.</li>
+        <li><b>Paper trade</b> for at least a month. Compare the results with the backtest.</li>
+        <li><b>Demo trade</b> on Bybit: set <code>"mode": "demo"</code> and use a demo API key.</li>
+        <li><b>Go live small</b>, in a sub-account, with money you can afford to lose.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="kenya">
+    <div class="wrap">
+      <h2>Trading on Bybit from Kenya</h2>
+      <p class="sub">The essentials, as of October 2026. The <a href="https://github.com/mkb08/Tt1/blob/HEAD/docs/BYBIT_KENYA.md">full guide</a> has sources and step-by-step setup.</p>
+      <div class="kenya">
+        <div class="card">
+          <h3>Licensing deadline: <span class="date">4 November 2026</span></h3>
+          <p>Kenya's VASP Act requires exchanges to be licensed by the Capital Markets Authority. Law firms report 4 November 2026 as the compliance deadline for existing platforms. Nothing public confirms that Bybit has a licence. Keep only trading money on the exchange and have a second exchange ready.</p>
+        </div>
+        <div class="card">
+          <h3>Tax</h3>
+          <p>The 3% Digital Asset Tax was repealed in 2025 and replaced by a 10% excise duty on exchange fees. Whether your own profits are taxable is unclear, so keep the bot's trade logs and ask a KRA-registered adviser.</p>
+        </div>
+        <div class="card">
+          <h3>Start with spot</h3>
+          <ul>
+            <li>About 15–40 USDT is the minimum for BTC spot. BTC perps need about 200–400 USDT, because the smallest order is 0.001 BTC.</li>
+            <li>Spot can't be liquidated and pays no funding. Shorting didn't improve results in the tests.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>API keys and M-Pesa</h3>
+          <ul>
+            <li>Never enable withdrawals on a key. Keys without a fixed IP reportedly expire after about 90 days, and mobile data IPs change, so a small server with a fixed IP is the long-term fix.</li>
+            <li>For P2P, release USDT only after the money shows in your M-Pesa app. Fake confirmation SMS messages are the usual scam.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Backtests use Binance spot price history, which closely tracks Bybit's. Past results don't predict future ones. Nothing here is financial, legal or tax advice. Only trade money you can afford to lose.</p>
+    <p><a href="https://github.com/mkb08/Tt1">Source on GitHub</a> · <span id="generated"></span></p>
+  </div>
+</footer>
+
+<script>
+(() => {
+  "use strict";
+  const SERIES = [
+    { key: "trend", name: "Trend breakout", color: "var(--s1)" },
+    { key: "ema", name: "EMA cross", color: "var(--s2)" },
+    { key: "bh", name: "Buy & hold", color: "var(--s3)" },
+  ];
+  const NAMES = { trend: "Trend breakout", ema: "EMA cross", rsi: "RSI dip-buying", bh: "Buy & hold" };
+  const DAY = 86400000;
+  const NS = "http://www.w3.org/2000/svg";
+  let data = null;
+  let market = "BTC";
+  const charts = new Map();  // chart id -> { svg, hide }, replaced on each redraw
+  document.addEventListener("pointerdown", (e) => {
+    for (const c of charts.values()) if (!c.svg.contains(e.target)) c.hide();
+  });
+
+  const pct = (x, d = 1) => (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x * 100).toFixed(d) + "%";
+  const pctAbs = (x, d = 1) => (x * 100).toFixed(d) + "%";
+  const num = (x) => Math.round(x).toLocaleString("en-US");
+  const compact = (v) => v >= 1000 ? (v / 1000).toLocaleString("en-US", { maximumFractionDigits: 1 }) + "K" : String(Math.round(v));
+  const dateOf = (day) => new Date(day * DAY);
+  const fmtDate = (day) => dateOf(day).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  const el = (tag, attrs = {}, parent) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    if (parent) parent.appendChild(n);
+    return n;
+  };
+  const h = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  };
+
+  // ---------- line chart with crosshair tooltip ----------
+  function lineChart(root, cfg) {
+    root.textContent = "";
+    const W = Math.max(280, root.clientWidth);
+    const narrow = W < 520;
+    const H = narrow ? 230 : 280;
+    const m = { top: 12, right: narrow ? 10 : 98, bottom: 26, left: 44 };
+    const iw = W - m.left - m.right, ih = H - m.top - m.bottom;
+    const days = cfg.days;
+    const x0 = days[0], x1 = days[days.length - 1];
+    const sx = (d) => m.left + ((d - x0) / (x1 - x0)) * iw;
+    const tf = cfg.log ? Math.log10 : (v) => v;
+    const [d0, d1] = cfg.domain;
+    const sy = (v) => m.top + ih - ((tf(v) - tf(d0)) / (tf(d1) - tf(d0))) * ih;
+
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", tabindex: "0",
+      "aria-label": cfg.label + ". Use left and right arrow keys to read values." });
+    root.appendChild(svg);
+
+    // grid + y ticks
+    for (const t of cfg.ticks) {
+      const y = sy(t);
+      el("line", { x1: m.left, x2: m.left + iw, y1: y, y2: y, stroke: t === cfg.base ? "var(--baseline)" : "var(--grid)", "stroke-width": 1 }, svg);
+      const tx = el("text", { x: m.left - 8, y: y + 4, "text-anchor": "end", "font-size": 11, fill: "var(--axis)", "font-variant-numeric": "tabular-nums" }, svg);
+      tx.textContent = cfg.tickFmt(t);
+    }
+    // x ticks: years
+    const y0 = dateOf(x0).getUTCFullYear(), y1 = dateOf(x1).getUTCFullYear();
+    for (let y = y0 + 1; y <= y1; y++) {
+      const d = Date.UTC(y, 0, 1) / DAY;
+      if (narrow && (y - y0) % 2 === 0) continue;
+      const tx = el("text", { x: sx(d), y: H - 6, "text-anchor": "middle", "font-size": 11, fill: "var(--axis)" }, svg);
+      tx.textContent = String(y);
+    }
+    // lines
+    const ends = [];
+    for (const s of cfg.series) {
+      let dstr = "", started = false;
+      for (let i = 0; i < days.length; i++) {
+        const v = s.values[i];
+        if (v == null) { started = false; continue; }
+        dstr += (started ? "L" : "M") + sx(days[i]).toFixed(1) + " " + sy(v).toFixed(1);
+        started = true;
+      }
+      el("path", { d: dstr, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+      const lastV = s.values[s.values.length - 1];
+      ends.push({ s, x: sx(x1), y: sy(lastV), v: lastV });
+    }
+    for (const e of ends) {
+      el("circle", { cx: e.x, cy: e.y, r: 4, fill: e.s.color, stroke: "var(--surface)", "stroke-width": 2 }, svg);
+    }
+    // direct end labels, only where they don't collide
+    if (!narrow) {
+      const sorted = [...ends].sort((a, b) => a.y - b.y);
+      sorted.forEach((e, i) => {
+        const prev = sorted[i - 1], next = sorted[i + 1];
+        if ((prev && e.y - prev.y < 15) || (next && next.y - e.y < 15)) return;
+        const t = el("text", { x: e.x + 9, y: e.y + 4, "font-size": 12, fill: "var(--text-2)" }, svg);
+        t.textContent = e.s.short + " " + cfg.endFmt(e.v);
+      });
+    }
+
+    // crosshair + tooltip
+    const cross = el("line", { y1: m.top, y2: m.top + ih, stroke: "var(--axis)", "stroke-width": 1, opacity: 0 }, svg);
+    const dots = cfg.series.map((s) => el("circle", { r: 4, fill: s.color, stroke: "var(--surface)", "stroke-width": 2, opacity: 0 }, svg));
+    const tip = h("div", "tip");
+    tip.setAttribute("aria-hidden", "true");
+    root.appendChild(tip);
+    let idx = days.length - 1;
+
+    function show(i) {
+      idx = Math.max(0, Math.min(days.length - 1, i));
+      const x = sx(days[idx]);
+      cross.setAttribute("x1", x); cross.setAttribute("x2", x); cross.setAttribute("opacity", 1);
+      tip.textContent = "";
+      tip.appendChild(h("div", "date", fmtDate(days[idx])));
+      cfg.series.forEach((s, k) => {
+        const v = s.values[idx];
+        if (v == null) { dots[k].setAttribute("opacity", 0); return; }
+        dots[k].setAttribute("cx", x); dots[k].setAttribute("cy", sy(v)); dots[k].setAttribute("opacity", 1);
+        const row = h("div", "row");
+        const key = h("i"); key.style.borderColor = s.color;
+        row.append(key, h("b", null, cfg.tipFmt(v)), h("span", null, s.name));
+        tip.appendChild(row);
+      });
+      tip.style.opacity = 1;
+      const tw = tip.offsetWidth, th = tip.offsetHeight;
+      const scale = root.clientWidth / W;
+      let left = x * scale + 12;
+      if (left + tw > root.clientWidth) left = x * scale - tw - 12;
+      tip.style.left = Math.max(0, left) + "px";
+      tip.style.top = Math.max(0, m.top * scale + 4) + "px";
+      void th;
+    }
+    function hide() {
+      cross.setAttribute("opacity", 0);
+      dots.forEach((d) => d.setAttribute("opacity", 0));
+      tip.style.opacity = 0;
+    }
+    function nearest(clientX) {
+      const r = svg.getBoundingClientRect();
+      const px = ((clientX - r.left) / r.width) * W;
+      const d = x0 + ((px - m.left) / iw) * (x1 - x0);
+      let lo = 0, hi = days.length - 1;
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (days[mid] < d) lo = mid; else hi = mid; }
+      return Math.abs(days[lo] - d) <= Math.abs(days[hi] - d) ? lo : hi;
+    }
+    svg.addEventListener("pointermove", (e) => show(nearest(e.clientX)));
+    svg.addEventListener("pointerdown", (e) => show(nearest(e.clientX)));
+    // touch fires pointerleave on lift; keep the readout until a tap elsewhere
+    svg.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") hide(); });
+    charts.set(root.id, { svg, hide });
+    svg.addEventListener("focus", () => show(idx));
+    svg.addEventListener("blur", hide);
+    svg.addEventListener("keydown", (e) => {
+      const step = e.shiftKey ? 30 : 7;
+      if (e.key === "ArrowLeft") { show(idx - step); e.preventDefault(); }
+      if (e.key === "ArrowRight") { show(idx + step); e.preventDefault(); }
+    });
+  }
+
+  function legend(target, series) {
+    target.textContent = "";
+    for (const s of series) {
+      const sp = h("span"); const i = h("i"); i.style.borderColor = s.color;
+      sp.append(i, document.createTextNode(s.name));
+      target.appendChild(sp);
+    }
+  }
+
+  function niceLogTicks(lo, hi) {
+    const out = [];
+    for (let p = Math.floor(Math.log10(lo)); p <= Math.ceil(Math.log10(hi)); p++) {
+      for (const k of [1, 2, 5]) { const v = k * 10 ** p; if (v >= lo && v <= hi) out.push(v); }
+    }
+    return out;
+  }
+
+  // ---------- render one market ----------
+  function render() {
+    const M = data.markets[market];
+    document.getElementById("period").textContent =
+      `${market}/USDT · 4h candles · ${fmtDate(Date.parse(M.start) / DAY)} – ${fmtDate(Date.parse(M.end) / DAY)}`;
+
+    // align curves on the buy & hold calendar
+    const days = M.curves.bh.map((p) => p[0]);
+    const series = SERIES.map((s) => {
+      const map = new Map(M.curves[s.key].map((p) => [p[0], p[1]]));
+      return { ...s, short: s.key === "bh" ? "Hold" : s.key === "ema" ? "EMA" : "Trend", values: days.map((d) => map.has(d) ? map.get(d) : null) };
+    });
+
+    // tiles
+    const tiles = document.getElementById("tiles");
+    tiles.textContent = "";
+    for (const s of SERIES) {
+      const mt = M.metrics[s.key];
+      const t = h("div", "card tile");
+      const lab = h("div", "label"); const key = h("span", "key"); key.style.borderColor = s.color;
+      lab.append(key, document.createTextNode(s.name));
+      const val = h("div", "value", pct(mt.total_return, mt.total_return > 10 ? 0 : 1));
+      const meta = h("div", "meta");
+      meta.append(document.createTextNode("Worst drop "), h("b", null, pctAbs(mt.max_drawdown)));
+      if (s.key !== "bh") meta.append(h("span", "trades", ` · ${mt.trades} trades`));
+      t.append(lab, val, meta);
+      tiles.appendChild(t);
+    }
+
+    // growth chart (log)
+    let lo = Infinity, hi = -Infinity;
+    for (const s of series) for (const v of s.values) if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    lo = Math.min(lo, 1000) * 0.92; hi = hi * 1.08;
+    const gTicks = niceLogTicks(lo, hi);
+    legend(document.querySelector('.legend[data-for="growth"]'), series);
+    lineChart(document.getElementById("growth"), {
+      label: `Growth of 1,000 USDT for ${market}: trend breakout, EMA cross and buy and hold`,
+      days, series, log: true, domain: [lo, hi], ticks: gTicks, base: 1000,
+      tickFmt: compact, endFmt: (v) => compact(v), tipFmt: (v) => num(v) + " USDT",
+    });
+
+    // drawdown chart
+    const ddSeries = series.map((s) => {
+      let peak = -Infinity;
+      return { ...s, values: s.values.map((v) => { if (v == null) return null; peak = Math.max(peak, v); return v / peak - 1; }) };
+    });
+    let minDD = 0;
+    for (const s of ddSeries) for (const v of s.values) if (v != null) minDD = Math.min(minDD, v);
+    const step = minDD < -0.5 ? 0.25 : minDD < -0.2 ? 0.1 : 0.05;
+    const ddLo = Math.floor(minDD / step) * step - 0.0001;
+    const ddTicks = [];
+    for (let t = 0; t >= ddLo; t -= step) ddTicks.push(Math.round(t * 100) / 100);
+    legend(document.querySelector('.legend[data-for="dd"]'), ddSeries);
+    lineChart(document.getElementById("dd"), {
+      label: `Drop from previous peak for ${market}`,
+      days, series: ddSeries, log: false, domain: [ddLo, 0], ticks: ddTicks, base: 0,
+      tickFmt: (t) => t === 0 ? "0%" : pct(t, 0), endFmt: (v) => pct(v, 0), tipFmt: (v) => pct(v),
+    });
+
+    // results table
+    const table = document.getElementById("table");
+    table.textContent = "";
+    const thead = h("thead"); const hr = h("tr");
+    ["Strategy", "Trades", "Return", "Per year", "Worst drop", "Sharpe", "Win rate", "Out-of-sample", "Profitable periods"]
+      .forEach((c) => hr.appendChild(h("th", null, c)));
+    thead.appendChild(hr); table.appendChild(thead);
+    const tb = h("tbody");
+    for (const k of ["trend", "ema", "rsi", "bh"]) {
+      const mt = M.metrics[k], wf = M.walkforward[k];
+      const tr = h("tr");
+      const name = h("td");
+      const s = SERIES.find((x) => x.key === k);
+      if (s) { const sw = h("span", "sw"); sw.style.borderColor = s.color; name.appendChild(sw); }
+      name.appendChild(document.createTextNode(NAMES[k]));
+      tr.appendChild(name);
+      const cell = (text, cls) => { const td = h("td", cls, text); tr.appendChild(td); };
+      if (k === "bh") {
+        cell("—"); cell(pct(mt.total_return, 0), "pos"); cell("—"); cell(pctAbs(mt.max_drawdown)); cell("—"); cell("—"); cell("—"); cell("—");
+      } else {
+        cell(String(mt.trades));
+        cell(pct(mt.total_return), mt.total_return >= 0 ? "pos" : "neg");
+        cell(pct(mt.cagr));
+        cell(pctAbs(mt.max_drawdown));
+        cell(mt.sharpe.toFixed(2));
+        cell(pctAbs(mt.win_rate, 0));
+        cell(pct(wf.compounded), wf.compounded >= 0 ? "pos" : "neg");
+        cell(`${wf.profitable} of ${wf.folds}`);
+      }
+      tb.appendChild(tr);
+    }
+    table.appendChild(tb);
+
+    // spot vs perp table
+    const perp = document.getElementById("perp");
+    perp.textContent = "";
+    const ph = h("thead"); const phr = h("tr");
+    ["Setup", "Trades", "Return", "Worst drop", "Sharpe"].forEach((c) => phr.appendChild(h("th", null, c)));
+    ph.appendChild(phr); perp.appendChild(ph);
+    const pb = h("tbody");
+    const rows = [
+      ["Spot · trend", M.metrics.trend],
+      ["Perp · trend", M.perp.trend_long],
+      ["Perp · trend + shorts", M.perp.trend_ls],
+      ["Spot · EMA", M.metrics.ema],
+      ["Perp · EMA", M.perp.ema_long],
+      ["Perp · EMA + shorts", M.perp.ema_ls],
+    ];
+    for (const [label, mt] of rows) {
+      const tr = h("tr");
+      tr.appendChild(h("td", null, label));
+      tr.appendChild(h("td", null, String(mt.trades)));
+      tr.appendChild(h("td", mt.total_return >= 0 ? "pos" : "neg", pct(mt.total_return)));
+      tr.appendChild(h("td", null, pctAbs(mt.max_drawdown)));
+      tr.appendChild(h("td", null, mt.sharpe.toFixed(2)));
+      pb.appendChild(tr);
+    }
+    perp.appendChild(pb);
+
+    // takeaways derived from the data
+    const tk = document.getElementById("takeaways");
+    tk.textContent = "";
+    const best = M.metrics.trend.sharpe >= M.metrics.ema.sharpe ? "trend" : "ema";
+    const items = [
+      `Buy & hold made ${pct(M.metrics.bh.total_return, 0)} but fell ${pctAbs(M.metrics.bh.max_drawdown, 0)} at its worst. The rule-based strategies never fell more than ${pctAbs(Math.max(M.metrics.trend.max_drawdown, M.metrics.ema.max_drawdown), 0)}.`,
+      `${NAMES[best]} had the best risk-adjusted result here (Sharpe ${M.metrics[best].sharpe.toFixed(2)}).`,
+      M.metrics.rsi.total_return < 0
+        ? `RSI dip-buying won ${pctAbs(M.metrics.rsi.win_rate, 0)} of its trades and still lost ${pctAbs(-M.metrics.rsi.total_return)} after costs. A high win rate is not an edge.`
+        : `RSI dip-buying won ${pctAbs(M.metrics.rsi.win_rate, 0)} of its trades for ${pct(M.metrics.rsi.total_return)} after costs.`,
+      `Adding shorts on perps ${M.perp.trend_ls.sharpe < M.perp.trend_long.sharpe ? "lowered" : "raised"} the trend strategy's Sharpe from ${M.perp.trend_long.sharpe.toFixed(2)} to ${M.perp.trend_ls.sharpe.toFixed(2)}.`,
+    ];
+    for (const t of items) tk.appendChild(h("li", null, t));
+    tk.querySelectorAll("li").forEach((li) => (li.style.marginBottom = "6px"));
+  }
+
+  // ---------- wiring ----------
+  document.querySelectorAll(".seg button").forEach((b) => {
+    b.addEventListener("click", () => {
+      market = b.dataset.m;
+      document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      if (data) render();
+    });
+  });
+  let rt;
+  window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => data && render(), 120); });
+  document.querySelectorAll(".copy").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const pre = document.getElementById(btn.dataset.copy);
+      const text = [...pre.childNodes].filter((n) => n !== btn).map((n) => n.textContent).join("").trim();
+      try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; }
+      catch { btn.textContent = "Select & copy"; }
+      setTimeout(() => (btn.textContent = "Copy"), 1600);
+    });
+  });
+
+  fetch("data/results.json")
+    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then((d) => {
+      data = d;
+      const s = d.settings;
+      document.getElementById("settings").textContent =
+        `Settings: ${s.timeframe} candles, ${pctAbs(s.risk_per_trade, 0)} risk per trade, ${s.max_leverage}x max leverage, ` +
+        `${pctAbs(s.spot_fee, 2)} spot fee, ${pctAbs(s.slippage, 2)} slippage, start ${num(s.start_equity)} USDT. ` +
+        `Generated ${d.generated} with scripts/build_site.py.`;
+      document.getElementById("generated").textContent = `Results generated ${d.generated}`;
+      render();
+    })
+    .catch((e) => {
+      const p = document.getElementById("period");
+      p.textContent = "Couldn't load the results data (" + e.message + ").";
+      p.className = "note err";
+    });
+})();
+</script>
+</body>
+</html>

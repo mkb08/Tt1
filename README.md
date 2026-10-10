@@ -189,6 +189,14 @@ Android kills background apps to save battery. To keep the bot alive:
 - **Forex**: OANDA has a REST API (same approach). MetaTrader 5's Python package is Windows-only, so it can't run in Termux.
 - Taxes: every trade can be a taxable event. Keep the fill logs (`state/`).
 
+## Website
+
+The project site lives in `site/`: a static page with no build step, deployed on Vercel from this repo. Every push to the default branch redeploys it. To refresh its numbers after downloading new data with `tt fetch`, run:
+
+```bash
+python scripts/build_site.py      # rewrites site/data/results.json
+```
+
 ## Development
 
 ```bash
