@@ -27,7 +27,7 @@ import statistics
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -36,9 +36,9 @@ from tt.sports.fees import kalshi_fee  # noqa: E402
 
 DATA = os.path.join(ROOT, "data", "stink")
 OUT = os.path.join(ROOT, "research", "stink_bids.json")
-LEAGUES = {"nfl": ("KXNFLGAME", "football_game"), "ncaaf": ("KXNCAAFGAME", "football_game"),
-           "mlb": ("KXMLBGAME", "baseball_game"), "nhl": ("KXNHLGAME", "hockey_match"),
-           "nba": ("KXNBAGAME", "basketball_game")}
+LEAGUES = {"nba": ("KXNBAGAME", "basketball_game"), "nfl": ("KXNFLGAME", "football_game"),
+           "nhl": ("KXNHLGAME", "hockey_match"), "mlb": ("KXMLBGAME", "baseball_game"),
+           "ncaaf": ("KXNCAAFGAME", "football_game")}
 # Older settled markets live in Kalshi's archive (GET /historical/...); one
 # season back covers the 2025-26 NBA and NHL and the 2025 NFL season.
 HISTORY_FROM = "2025-09-01T00:00:00Z"
@@ -64,6 +64,17 @@ def iso(ts: str) -> int:
     return int(datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp())
 
 
+def patient(fn, *a, **k):
+    """Kalshi rate-limits bursts (HTTP 429): wait it out instead of failing."""
+    for attempt in range(10):
+        try:
+            return fn(*a, **k)
+        except RuntimeError as e:
+            if "HTTP 429" not in str(e) or attempt == 9:
+                raise
+            time.sleep(30)
+
+
 def g(d, key):
     """Live candles say low_dollars / volume_fp; archived ones low / volume."""
     d = d or {}
@@ -77,9 +88,13 @@ def fetch():
     os.makedirs(DATA, exist_ok=True)
     for (league, (series, mtype)), hist in [(x, h) for h in (False, True) for x in LEAGUES.items()]:
         path = os.path.join(DATA, f"{league}{'_hist' if hist else ''}.json.gz")
+        have = {}
         if os.path.exists(path):
-            print(f"{league}{' archive' if hist else ''}: cached")
-            continue
+            with gzip.open(path, "rt") as fh:
+                have = {m["ticker"]: m for m in json.load(fh)}
+            if not hist or os.path.exists(path + ".espn"):
+                print(f"{league}{' archive' if hist else ''}: cached")
+                continue
         if hist:
             ms = list(K._paged("/historical/markets", "markets",
                                {"series_ticker": series, "limit": 1000}, K.PROD, 200))
@@ -97,7 +112,9 @@ def fetch():
                                .strftime("%Y-%m-%dT%H:%M:%SZ"), max_pages=200):
             for ev in mi.get("primary_event_tickers") or []:
                 starts.setdefault(ev, iso(mi["start_date"]))
-        rows = []
+        espn_starts(league, ms, starts)
+        ms = [m for m in ms if m["ticker"] not in have]
+        rows = list(have.values())
 
         def one(m):
             st = starts.get(m["event_ticker"])
@@ -105,11 +122,11 @@ def fetch():
                 return None
             a, b = st - PLACE_BEFORE_MIN * 60 - 600, st + WINDOW_AFTER_MIN * 60
             if hist:
-                c = K.get_json(f"{K.PROD}/historical/markets/{m['ticker']}/candlesticks",
-                               {"start_ts": a, "end_ts": b, "period_interval": 1}
-                               ).get("candlesticks") or []
+                c = patient(K.get_json, f"{K.PROD}/historical/markets/{m['ticker']}/candlesticks",
+                            {"start_ts": a, "end_ts": b, "period_interval": 1}
+                            ).get("candlesticks") or []
             else:
-                c = K.candles(series, m["ticker"], a, b)
+                c = patient(K.candles, series, m["ticker"], a, b)
             keep = [[x["end_period_ts"], g(x.get("price"), "low") or None,
                      g(x.get("price"), "close") or None, g(x.get("yes_bid"), "close"),
                      g(x.get("yes_ask"), "close"), g(x, "volume")] for x in c]
@@ -117,7 +134,7 @@ def fetch():
                     "start": st, "volume": K.f(m.get("volume_fp")), "candles": keep}
 
         t0 = time.time()
-        with ThreadPoolExecutor(4) as pool:
+        with ThreadPoolExecutor(3) as pool:
             for i, r in enumerate(pool.map(one, ms)):
                 if r:
                     rows.append(r)
@@ -125,7 +142,42 @@ def fetch():
                     print(f"  {league}: {i}/{len(ms)} markets, {time.time() - t0:.0f}s", flush=True)
         with gzip.open(path, "wt") as fh:
             json.dump(rows, fh)
-        print(f"{league}: {len(rows)} of {len(ms)} settled markets have a start time and candles")
+        if hist:
+            open(path + ".espn", "w").close()  # marks the ESPN top-up as done
+        print(f"{league}: {len(rows)} settled markets with a start time and candles "
+              f"({len(ms)} new this run)")
+
+
+def espn_starts(league, ms, starts):
+    """Kalshi's schedule (/milestones) only goes back to early 2026 for some
+    leagues. For other games, take the start time from ESPN's scoreboard,
+    matching the two teams by name on the ticker's date."""
+    from tt.sports import espn, games as G
+    by_event = {}
+    for m in ms:
+        by_event.setdefault(m["event_ticker"], []).append(m)
+    days = {}
+    found = 0
+    for ev, pair in by_event.items():
+        if ev in starts or len(pair) != 2:
+            continue
+        day = K.ticker_date(ev)
+        if not day:
+            continue
+        cands = []
+        for d in {day, (datetime.fromisoformat(day) + timedelta(days=1)).strftime("%Y-%m-%d")}:
+            if d not in days:
+                try:
+                    days[d] = espn.scoreboard(league, d.replace("-", ""))
+                except Exception:  # noqa: BLE001 - a missing day just stays unmatched
+                    days[d] = []
+            cands += days[d]
+        labels = [(m.get("yes_sub_title") or "", m["ticker"].rsplit("-", 1)[-1]) for m in pair]
+        hits = [g for g in cands if G.us_date(g.start) == day and G.assign(g.teams, labels)]
+        if len(hits) == 1:
+            starts[ev] = hits[0].start
+            found += 1
+    print(f"  {league}: ESPN supplied {found} start times Kalshi's schedule lacked", flush=True)
 
 
 def mid_at(candles, ts):
@@ -314,13 +366,13 @@ def hedge():
 
         def one(r):
             key = r["ticker"]
-            if key in cache:
+            if cache.get(key, {}).get("p") is not None:
                 return r, cache[key]
             hist = r["start"] < iso("2026-08-11T00:00:00Z")
             mk = K.get_json(f"{K.PROD}/{'historical/' if hist else ''}markets/{r['ticker']}")["market"]
             label = mk.get("yes_sub_title") or ""
             evs = K.get_json(f"{P.GAMMA}/events", {
-                "series_id": P.SERIES[league], "closed": "true", "limit": 50,
+                "tag_id": P.TAGS[league], "closed": "true", "limit": 200,
                 "end_date_min": utc(r["start"] - 4 * 3600).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "end_date_max": utc(r["start"] + 4 * 3600).strftime("%Y-%m-%dT%H:%M:%SZ")})
             for ev in evs:

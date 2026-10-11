@@ -10,7 +10,9 @@ The system from the video (Moon Dev, 10 Oct 2026):
   4. Optional third step ("cross-exchange arbitrage triggered by a whale"):
      when a bid fills, buy the OTHER team on the OTHER venue if that locks in
      a profit after both venues' fees. Then the result no longer depends on
-     who wins.
+     who wins. Tried for `window_s` after a fill: a dump that only hit one
+     venue lets you lock it in; if the other venue moved too, it was news and
+     the position is held, as in steps 1-3.
 
 Reference price: the consensus of both venues' mid prices, so a bid isn't
 set off a price one venue is already dumping. Before the game, a bid is
@@ -38,7 +40,7 @@ DEFAULTS = {
     "discount": 0.30, "size_usd": 2.0, "sides": "both", "min_price": 0.10,
     "max_price": 0.90, "half_period": None, "reprice": 0.03, "ahead_hours": 12,
     "poll_seconds": 20, "max_total_usd": 60.0, "max_orders": 40,
-    "hedge": {"enabled": True, "min_locked_edge": 0.02},
+    "hedge": {"enabled": True, "min_locked_edge": 0.02, "window_s": 120},
     "state_file": "state/stink.json", "kalshi_env": "prod",
 }
 
@@ -171,7 +173,9 @@ class StinkBot:
             return
         g = gm.game
         half = cfg["half_period"]
-        mins = 0 if half == 0 else espn.HALF_MINUTES.get(g.league, 90)
+        mins = espn.HALF_MINUTES.get(g.league, 90)
+        if half is not None:  # a custom cut-off scales the typical time
+            mins = mins * half / espn.HALF_PERIOD.get(g.league, 2)
         expires = g.start + (mins + 15) * 60  # backstop if the bot goes offline
         if expires <= time.time() + 240:
             return  # too close to halftime to be worth it
@@ -214,7 +218,7 @@ class StinkBot:
         leg = self._leg(slot, gm)
         slot["filled"] = filled
         slot["fee"] = maker_fee(leg, filled, slot["bid"])
-        slot.setdefault("fill_ts", int(time.time()))
+        slot["fill_ts"] = int(time.time())  # the hedge window runs from the latest fill
         self.n.alert(f"FILLED {slot['venue']} {slot['game']} {slot['team']} {new:g} @ "
                      f"{slot['bid']:.2f} (was {slot['ref']:.2f}) {slot['url']}")
 
@@ -229,7 +233,9 @@ class StinkBot:
                 self.record_fill(slot, filled, gm)
                 if not still_open:
                     slot["status"] = "filled" if slot["filled"] else "cancelled"
-            if gm and slot["filled"] and self.cfg["hedge"]["enabled"] and gm.game.state != "post":
+            h = self.cfg["hedge"]
+            if gm and slot["filled"] and h["enabled"] and gm.game.state != "post" and \
+                    time.time() - slot.get("fill_ts", 0) <= h["window_s"]:
                 self.try_hedge(slot, gm)
 
     def try_hedge(self, slot: dict, gm: G.GameMarkets) -> None:

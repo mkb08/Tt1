@@ -514,5 +514,40 @@
    "ingame_share": 0.9977611940298508
   },
   "passes": false
+ },
+ "hedge": {
+  "nfl": {
+   "fills": 428,
+   "matched_on_polymarket": 124,
+   "hedge_available": 12,
+   "hedge_share": 0.0967741935483871,
+   "median_lock": -0.01749333333333339,
+   "hold_pnl": 36.37,
+   "hold_roi": 0.1579861865253465,
+   "hedge_or_hold_pnl": 28.58,
+   "hedge_or_hold_roi": 0.10485204343678929
+  },
+  "nba": {
+   "fills": 32,
+   "matched_on_polymarket": 27,
+   "hedge_available": 3,
+   "hedge_share": 0.1111111111111111,
+   "median_lock": -0.017254999999999895,
+   "hold_pnl": 15.82,
+   "hold_roi": 0.31363996827914364,
+   "hedge_or_hold_pnl": 17.57,
+   "hedge_or_hold_roi": 0.2643722539873608
+  },
+  "all": {
+   "fills": 460,
+   "matched_on_polymarket": 151,
+   "hedge_available": 15,
+   "hedge_share": 0.09933774834437085,
+   "median_lock": -0.017254999999999895,
+   "hold_pnl": 52.19,
+   "hold_roi": 0.18596116158916817,
+   "hedge_or_hold_pnl": 46.15,
+   "hedge_or_hold_roi": 0.136121844030203
+  }
  }
 }

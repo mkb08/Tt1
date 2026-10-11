@@ -209,6 +209,15 @@ class ClockTests(unittest.TestCase):
 
 
 class WhaleTests(unittest.TestCase):
+    def test_fmt_fits_a_phone(self):
+        w = whales.Whale(START, "kalshi", "nfl", "Eagles @ Jaguars", "PHI", "SELL", 0.2, 10000,
+                         2000.0, "https://k/x", "P 0.29/0.31", -0.1)
+        wide, narrow = whales.fmt(w, 200), whales.fmt(w, 60)
+        self.assertEqual(wide.count("\n"), 0)
+        self.assertIn("-10c", wide)
+        self.assertEqual(narrow.count("\n"), 2)
+        self.assertTrue(all(len(line) <= 60 for line in narrow.splitlines()))
+
     def test_group_merges_one_sweep(self):
         rows = [("m", 10, "SELL", 0.30, 100), ("m", 10, "SELL", 0.20, 100),
                 ("m", 10, "BUY", 0.31, 5), ("m", 11, "SELL", 0.30, 1)]
@@ -339,6 +348,16 @@ class StinkBotTests(unittest.TestCase):
         h = b.state["slots"]["kalshi:kalshi-PHI"]["hedge"]
         self.assertEqual((h["team"], h["size"]), ("JAX", 9.0))
 
+    def test_hedge_only_right_after_the_fill(self):
+        b = self.bot(hedge={"enabled": True, "min_locked_edge": 0.02, "window_s": 120})
+        b.step([markets(self.game(), FAIR)])
+        self.v["kalshi"].fill("kalshi-PHI")
+        news = {**FAIR, ("JAX", "polymarket"): (0.78, 0.80)}
+        b.step([markets(self.game("in", "STATUS_IN_PROGRESS", 1), news)])
+        b.state["slots"]["kalshi:kalshi-PHI"]["fill_ts"] -= 600  # ten minutes later
+        b.step([markets(self.game("in", "STATUS_IN_PROGRESS", 1), FAIR)])
+        self.assertFalse([c for c in self.v["polymarket"].calls if c[0] == "buy"])
+
     def test_no_hedge_when_the_move_is_news(self):
         b = self.bot(hedge={"enabled": True, "min_locked_edge": 0.02})
         b.step([markets(self.game(), FAIR)])
@@ -372,6 +391,9 @@ class StinkBotTests(unittest.TestCase):
     def test_bids_expire_on_the_exchange_after_halftime(self):
         self.bot().step([markets(self.game(), FAIR)])
         self.assertEqual(self.v["kalshi"].expires, self.start + (100 + 15) * 60)
+        self.bot(half_period=3, state_file=os.path.join(self.tmp, "q3.json")).step(
+            [markets(self.game(), FAIR)])
+        self.assertEqual(self.v["kalshi"].expires, self.start + (150 + 15) * 60)
         late = self.game("in", "STATUS_IN_PROGRESS", 2, start=int(time.time()) - 113 * 60)
         b = self.bot(state_file=os.path.join(self.tmp, "late.json"))
         n = self.v["kalshi"].n

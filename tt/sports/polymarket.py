@@ -16,9 +16,26 @@ GAMMA = "https://gamma-api.polymarket.com"
 CLOB = "https://clob.polymarket.com"
 DATA = "https://data-api.polymarket.com"
 
-# Polymarket series ids for game events (gamma /sports)
+# Polymarket series ids for game events, as of October 2026. A new season
+# can get a new series, so `league_series` asks gamma /sports first.
 SERIES = {"nfl": 12185, "ncaaf": 12756, "nba": 10345, "wnba": 10105, "ncaab": 39,
           "mlb": 3, "nhl": 10346}
+SPORT_CODES = {"ncaaf": "cfb"}
+# league tags stay the same across seasons; they find past seasons' games
+TAGS = {"nfl": 450, "nba": 745, "mlb": 100381, "nhl": 899, "wnba": 100254, "ncaab": 100149,
+        "ncaaf": 100351}
+_series_cache: dict[str, int] = {}
+
+
+def league_series(league: str) -> int:
+    if not _series_cache:
+        try:
+            for x in get_json(f"{GAMMA}/sports"):
+                if x.get("series"):
+                    _series_cache[x["sport"]] = int(x["series"])
+        except Exception:  # noqa: BLE001 - fall back to the known ids
+            _series_cache["_failed"] = 1
+    return _series_cache.get(SPORT_CODES.get(league, league)) or SERIES[league]
 
 
 def _iso(ts: float) -> str:
@@ -27,10 +44,12 @@ def _iso(ts: float) -> str:
 
 def game_events(league: str, start_from: float, start_to: float, closed: bool = False) -> list[dict]:
     """A league's game events starting between two unix times. A game
-    event's endDate is its scheduled start."""
-    return get_json(f"{GAMMA}/events", {"series_id": SERIES[league], "closed": str(closed).lower(),
+    event's endDate is its start or its expected end, so the query reaches
+    6 hours further and the caller checks `startTime`."""
+    return get_json(f"{GAMMA}/events", {"series_id": league_series(league),
+                                        "closed": str(closed).lower(),
                                         "limit": 500, "end_date_min": _iso(start_from),
-                                        "end_date_max": _iso(start_to)})
+                                        "end_date_max": _iso(start_to + 6 * 3600)})
 
 
 def moneyline(event: dict) -> dict | None:

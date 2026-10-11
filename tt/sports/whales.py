@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import os
+import shutil
 import time
 from dataclasses import dataclass
 
@@ -89,9 +90,15 @@ def collect(index: list[G.GameMarkets], since: int, min_usd: float,
     return sorted(out, key=lambda w: w.ts)
 
 
-def fmt(w: Whale) -> str:
+def fmt(w: Whale, width: int | None = None) -> str:
+    """One line on a wide terminal; three short lines on a phone."""
+    width = width or shutil.get_terminal_size((160, 24)).columns
     gap = f"{w.gap * 100:+.0f}c" if w.gap is not None else ""
-    return (f"{time.strftime('%H:%M:%S', time.gmtime(w.ts))} {w.venue[:4]:4s} {w.league:5s} "
+    when = time.strftime('%H:%M:%S', time.gmtime(w.ts))
+    if width < 150:
+        return (f"{when} {w.venue} {w.league} {w.game}\n"
+                f"   {w.side} {w.team} @{w.price:.2f}  ${w.usd:,.0f}  {w.other} {gap}\n   {w.url}")
+    return (f"{when} {w.venue[:4]:4s} {w.league:5s} "
             f"{w.game[:26]:26s} {w.side:4s} {w.team:4s} @{w.price:.2f} ${w.usd:>9,.0f}  "
             f"{w.other:13s} {gap:>5s}  {w.url}")
 
@@ -125,7 +132,7 @@ def run(leagues: list[str], venues: list[str], min_usd: float = 1000, every: int
                 print(f"-- last {len(recent)} whales "
                       f"({len(index)} games watched) " + "-" * 40)
                 for w in recent:
-                    print("   " + fmt(w))
+                    print("   " + fmt(w).replace("\n", "\n   "))
             since = max(since, int(time.time()) - 120)  # overlap; `seen` dedupes
             if once:
                 if not new:
