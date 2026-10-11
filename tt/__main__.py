@@ -240,6 +240,9 @@ def main(argv=None):
     p.add_argument("--i-accept-the-risk", action="store_true")
     p.set_defaults(fn=cmd_copy)
 
+    from .sports.cli import add_parsers
+    add_parsers(sub)
+
     args = ap.parse_args(argv)
     args.fn(args)
 

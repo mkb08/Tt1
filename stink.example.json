@@ -1,0 +1,19 @@
+{
+  "mode": "paper",
+  "leagues": ["nba"],
+  "venues": ["polymarket", "kalshi"],
+  "discount": 0.30,
+  "size_usd": 2.0,
+  "sides": "both",
+  "min_price": 0.10,
+  "max_price": 0.90,
+  "half_period": null,
+  "reprice": 0.03,
+  "ahead_hours": 12,
+  "poll_seconds": 20,
+  "max_total_usd": 60,
+  "max_orders": 40,
+  "hedge": {"enabled": true, "min_locked_edge": 0.02, "min_contracts": 5},
+  "state_file": "state/stink.json",
+  "kalshi_env": "prod"
+}
