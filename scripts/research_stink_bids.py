@@ -357,10 +357,13 @@ def write_site(out):
         site["hedge"] = h
         site["hedge_text"] = (
             f"The hedge (step 3): of {h['matched_on_polymarket']:,} NFL and NBA fills with a "
-            f"matching Polymarket market, buying the other team there would have locked a profit "
-            f"of 2¢ a share or more after fees {h['hedge_available']:,} times "
-            f"({h['hedge_share']:.0%}). Usually Polymarket had moved too: the price drop was news, "
-            f"not one venue's whale.")
+            f"matching Polymarket market, buying the other team there would have locked 2¢ a "
+            f"share or more after fees {h['hedge_available']:,} times ({h['hedge_share']:.0%}). "
+            f"Those were the real one-venue dips: held, they returned "
+            f"{pct(h['hedgeable_hold_roi'])}; hedged, they locked ${h['hedgeable_lock_pnl']:,.0f}. "
+            f"The other {h['unhedgeable_fills']:,} were news (Polymarket had moved too) and "
+            f"returned {pct(h['unhedgeable_hold_roi'])}. Hedging can't rescue those, so the "
+            f"system still loses.")
     path = os.path.join(ROOT, "site", "data", "stink.json")
     with open(path, "w") as fh:
         json.dump(site, fh, separators=(",", ":"))
@@ -443,6 +446,9 @@ def hedge():
         matched = [(r, res) for r, res in sel if res.get("p") is not None]
         hold = hedged_pnl = cost_h = cost_hold = 0.0
         n_hedge, locks = 0, []
+        # split: fills where a hedge existed (the other venue hadn't moved)
+        # and fills where it didn't (both venues moved: news)
+        part = {"yes": [0.0, 0.0, 0.0, 0], "no": [0.0, 0.0, 0.0, 0]}  # hold, cost, lock, n
         for r, res in matched:
             n, bid = r["contracts"], r["bid"]
             other_ask = min(0.99, 1 - res["p"] + 0.005)
@@ -450,9 +456,14 @@ def hedge():
             locks.append(lock)
             hold += r["net"]
             cost_hold += r["cost"]
+            q = part["yes" if lock >= 0.02 else "no"]
+            q[0] += r["net"]
+            q[1] += r["cost"]
+            q[3] += 1
             if lock >= 0.02:
                 n_hedge += 1
                 hedged_pnl += n * lock
+                q[2] += n * lock
                 cost_h += r["cost"] + n * other_ask
             else:
                 hedged_pnl += r["net"]
@@ -463,7 +474,13 @@ def hedge():
                        "median_lock": statistics.median(locks) if locks else None,
                        "hold_pnl": round(hold, 2), "hold_roi": hold / cost_hold if cost_hold else 0,
                        "hedge_or_hold_pnl": round(hedged_pnl, 2),
-                       "hedge_or_hold_roi": hedged_pnl / cost_h if cost_h else 0}
+                       "hedge_or_hold_roi": hedged_pnl / cost_h if cost_h else 0,
+                       "hedgeable_hold_pnl": round(part["yes"][0], 2),
+                       "hedgeable_hold_roi": part["yes"][0] / part["yes"][1] if part["yes"][1] else 0,
+                       "hedgeable_lock_pnl": round(part["yes"][2], 2),
+                       "unhedgeable_fills": part["no"][3],
+                       "unhedgeable_hold_pnl": round(part["no"][0], 2),
+                       "unhedgeable_hold_roi": part["no"][0] / part["no"][1] if part["no"][1] else 0}
         print(league, json.dumps(out[league]))
     res_all = {}
     if os.path.exists(OUT):

@@ -10,6 +10,7 @@
 4. **Paper trade** on live prices with a simulated account.
 5. **Trade live** on 100+ crypto exchanges through `ccxt`, spot or perpetual futures.
 6. **Copy trade**: mirror a leader's positions into any number of follower accounts, each with its own risk limits.
+7. **Sports prediction markets** (Polymarket and Kalshi): match today's games across both venues, scan for whale trades, and run a stink-bid bot, [tested first](#sports-prediction-markets-whale-scanner-and-stink-bids-polymarket--kalshi).
 
 The core uses only the Python standard library, so it installs in seconds on a phone. `ccxt` is needed only for live exchange access.
 
@@ -197,6 +198,86 @@ scripts/run.sh copy --config copy.json --i-accept-the-risk
 
 ---
 
+## Sports prediction markets: whale scanner and stink bids (Polymarket + Kalshi)
+
+This builds the system from [Moon Dev's 10 October 2026 stream](https://x.com/MoonDevOnYT/status/2108988433062355089) ("a bot that exploits Polymarket and Kalshi to steal massive discounts from panicking whales"). His rules, from the video:
+
+1. **Stink bids.** On every game, rest a limit buy on each team **30% below** its current price, **$2** each.
+2. **Cancel at halftime.** Bids stay up before the game and through the first half; unfilled ones are cancelled when the second half starts.
+3. **Hold.** A filled bid is held to settlement.
+4. **Hedge (his "third unlock").** When a whale's dump fills your bid on one venue, buy the *other* team on the *other* venue, so you profit whoever wins.
+
+**Tested first. It loses as specified.** The rule was replayed on 7,852 settled Kalshi games (NBA, NFL, NHL, MLB and college football, April 2025 to October 2026):
+
+| Rule: 30% below, $2, until halftime | Result |
+|---|---|
+| Bids placed / filled | 15,450 / 7,952 (51%) |
+| Filled before kick-off (the "panicking whale" case) | **17** |
+| Filled during play, as the game turned against the team | 7,935 |
+| Filled team went on to win | 30%, at an average price of 31¢ |
+| Return on money staked, after Kalshi fees | **−6.3%** (95% range −9.4% to −3.0%) |
+| Same with no fees (a maker on Polymarket) | −5.0% |
+| Other discounts (10–50%) and windows | 15 of 15 lost money |
+
+- **The whale case exists, but rarely.** A resting bid gets filled mostly by news (a score, an injury) and only rarely by a whale. The 1 fill in 5 where the price bounced back within 10 minutes made +49%. The 4 in 5 where it kept falling lost −20%, and you can't tell them apart when the fill happens.
+- **The hedge rarely helps.** At the moment of a fill, the other venue's price shows which case it is. In 9% of NFL and NBA fills, Polymarket hadn't moved: a one-venue whale dip, which made +29% held (or a locked profit hedged). In the other 91%, Polymarket had moved too, because it was news. Those lost −9.3%, and no hedge exists for them.
+- **So the bot is built and runs, but treat it as a paper-trading experiment, not an income source.** The one lead in the data is a different design: buy only when one venue is cheap *and* the other hasn't moved, rather than resting blind bids. That isn't tested yet.
+
+Full method and numbers: [docs/STINK_BID_RESEARCH.md](docs/STINK_BID_RESEARCH.md).
+
+### Dashboard
+
+**https://tt1-rouge.vercel.app/sports** (`site/sports.html`, live once this is merged to the default branch) shows the system live in the browser, read-only:
+- **Live board:** today's games with both venues' prices, where each stink bid would sit, and whether bids are still up (they're struck through after halftime).
+- **Cross-venue lock:** what buying the two teams on opposite venues would lock in after fees.
+- **Whale feed:** big trades next to the other venue's price for the same team.
+- **The study:** the backtest numbers above.
+
+Kalshi refuses browser requests, so the page reads it through a small read-only proxy (`site/api/kalshi.js`, a Vercel function that allows only public market-data endpoints).
+
+### The three tools
+
+```bash
+# Today's games matched across both venues, each team's price on each, and
+# what buying the two teams on opposite venues would lock in after fees
+python -m tt games --leagues nfl,nba --live
+
+# Whale scanner: trades >= $1,000 on today's games, both venues, every 15 s.
+# Each row shows the other venue's price for the same team: a SELL at 0.18
+# next to "K 0.23/0.24" is a dump on one venue, not news.
+python -m tt whales --leagues nfl,nba,mlb,nhl --min-usd 1000
+
+# Stink-bid bot. Paper trading is the default and needs no account.
+cp stink.example.json stink.json
+python -m tt stink --config stink.json --dry-run   # list the bids it would place now
+scripts/run.sh stink --config stink.json           # run it (paper), restarts on crash
+python -m tt stink --config stink.json --status    # P&L, resting bids, open positions
+```
+
+No API keys are needed for `games`, `whales` or paper trading. Leagues: `nfl`, `ncaaf`, `nba`, `wnba`, `ncaab`, `mlb`, `nhl` (game-winner markets).
+
+**How the bot works:**
+- **Games and clock.** ESPN's public scoreboard supplies teams, start times and the period. Each venue's market is matched to the game team by team; a match must be unambiguous, or the game is skipped.
+- **Reference price.** The bid sits `discount` below the average of the two venues' mid prices. Before the game it moves if that price drifts more than `reprice`; during the game it stays put.
+- **Halftime cancel, with a backstop.** Bids are cancelled when ESPN reports the first half over (`half_period`: quarters 2, college basketball 1, NHL 1, MLB 5 innings; `0` = pre-game only). Every bid also carries an expiry on the exchange about 15 minutes after a typical halftime, so it lapses even if your phone dies.
+- **Hedge.** With `hedge.enabled`, for `window_s` seconds after a fill the bot looks for the other team on the other venue. It buys there only if that locks at least `min_locked_edge` per share after both venues' fees. Otherwise it holds, because the other venue moving too means news, not a whale.
+- **Paper fills are strict.** A paper bid fills only when the market trades *below* it, or its ask drops to it. A trade exactly at your price isn't a fill, because in reality you'd be behind everyone already waiting there.
+- **Caps.** `max_total_usd` limits money in bids plus positions; `max_orders` limits resting bids. With hedging on, bids are at least 5 contracts (Polymarket's minimum), so a hedge can match.
+
+### Going live (only after paper trading)
+
+- **Kalshi:** create an API key (Account & security → API Keys). Then `export KALSHI_KEY_ID=...` and `export KALSHI_PRIVATE_KEY_PATH=~/kalshi.key`, and install `pkg install python-cryptography` on Termux (`pip install cryptography` elsewhere). Test on the demo exchange first: `"kalshi_env": "demo"` with a demo.kalshi.co account.
+- **Polymarket:** `pip install polymarket-client` (it needs pydantic and eth-account; on a phone that may mean `pkg install rust` and a long build, so a VPS is easier). Then `export POLY_PRIVATE_KEY=...` and `POLY_WALLET=<your Polymarket address>`. Make one small trade on polymarket.com first so the wallet's approvals are set. That private key controls the wallet, so keep only what you're trading in it.
+- `python -m tt stink --config stink.json --check` verifies keys and balances without trading. Then set `"mode": "live"` and run with `--i-accept-the-risk`.
+- The live order code follows each venue's current API documentation and official SDK (October 2026). It is unit-tested against canned responses, but it has **not** been run against a real account. Start with one league, `$2` bids and a low `max_total_usd`.
+
+**Before you put money in:**
+- **Can you use them from Kenya?** Polymarket's geoblock list (October 2026) doesn't restrict Kenya. Kalshi accepts many non-US countries; its Member Agreement lists which, and sign-up checks your country. Kenya's Gambling Control Act 2025 doesn't mention prediction markets, so whether sports contracts count as betting is unsettled. Treat the gains as taxable and keep the logs (`state/stink.json`, `logs/`).
+- **Settlement rules differ.** A hedge only locks a profit if both venues settle the game the same way. Ties settle at 50/50 on both for the NFL. Postponements differ: Kalshi pays a "fair price" if a game doesn't start within 48 hours; Polymarket waits or pays 50/50. Read both rules for each league you hedge.
+- **The hedge can fail.** Its order is fill-or-kill at the price that locks the profit. If the book moved, it doesn't fill and you hold an unhedged position.
+
+---
+
 ## Keeping it running on Android
 
 Android kills background apps to save battery. To keep the bot alive:
@@ -244,6 +325,6 @@ python scripts/build_site.py      # rewrites site/data/results.json (and scalp.j
 python -m unittest discover -s tests -t .
 ```
 
-Layout: `tt/data.py` (candles, download), `bybit.py` (Bybit public data, stdlib), `check.py` (pre-flight), `indicators.py`, `strategies.py`, `risk.py`, `backtest.py` (backtest, walk-forward, Monte Carlo), `broker.py` (paper + ccxt), `live.py` (bot), `copytrade.py`, `notify.py`, `__main__.py` (CLI).
+Layout: `tt/data.py` (candles, download), `bybit.py` (Bybit public data, stdlib), `check.py` (pre-flight), `indicators.py`, `strategies.py`, `risk.py`, `backtest.py` (backtest, walk-forward, Monte Carlo), `broker.py` (paper + ccxt), `live.py` (bot), `copytrade.py`, `notify.py`, `__main__.py` (CLI). Sports: `tt/sports/` (`kalshi.py`, `polymarket.py`, `espn.py`, `games.py` matching, `fees.py`, `whales.py`, `stink.py` bot, `venues.py` paper and live orders).
 
 *Nothing here is financial advice. Trading can lose more than you expect. Only trade money you can afford to lose.*
