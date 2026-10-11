@@ -1,0 +1,69 @@
+name: Weekly analytics
+
+# Pulls channel stats, then Claude writes data/insights.md: what is working and what
+# to try next. The writer reads that file before every script, closing the loop.
+
+on:
+  schedule:
+    - cron: "23 7 * * 1"     # Mondays 07:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  analytics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HAS_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+      HAS_CLAUDE_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+      HAS_YOUTUBE: ${{ secrets.YT_REFRESH_TOKEN != '' }}
+      YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+      YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+      YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+    steps:
+      - name: Needs YouTube secrets
+        if: env.HAS_YOUTUBE != 'true'
+        run: echo "::notice::Set YT_CLIENT_ID, YT_CLIENT_SECRET and YT_REFRESH_TOKEN to enable analytics."
+
+      - uses: actions/checkout@v6
+        if: env.HAS_YOUTUBE == 'true'
+
+      - uses: actions/setup-python@v5
+        if: env.HAS_YOUTUBE == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python packages
+        if: env.HAS_YOUTUBE == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Collect stats (and insights, with an API key)
+        if: env.HAS_YOUTUBE == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python -m autopilot analytics
+
+      - name: Write insights with Claude Code (Pro/Max subscription)
+        if: env.HAS_YOUTUBE == 'true' && env.HAS_ANTHROPIC_API_KEY != 'true' && env.HAS_CLAUDE_OAUTH == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Follow "Procedure: weekly insights" in CLAUDE.md.
+          claude_args: |
+            --max-turns 15
+            --allowedTools "Read,Write,Edit,Glob,Grep"
+
+      - name: Save
+        if: env.HAS_YOUTUBE == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Weekly analytics"
+          for i in 1 2 3; do git pull --rebase origin "$GITHUB_REF_NAME" && git push && break; sleep 5; done

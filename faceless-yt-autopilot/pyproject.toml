@@ -1,0 +1,8 @@
+[project]
+name = "faceless-yt-autopilot"
+version = "1.0.0"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -1,0 +1,114 @@
+name: Autopilot
+
+on:
+  schedule:
+    # Two videos a day (times are UTC). Move them to when your audience is awake.
+    - cron: "41 13 * * *"
+    - cron: "41 21 * * *"
+  push:
+    branches: [main]
+    paths: ["content/queue/**"]     # merging an @claude PR with a new script publishes it
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "Topic for this video (blank: Claude picks one from fresh research)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Render only, don't upload"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: autopilot
+  cancel-in-progress: false
+
+jobs:
+  produce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      HAS_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+      HAS_CLAUDE_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+      TOPIC: ${{ inputs.topic }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+      YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+      YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Install Python packages
+        run: pip install -r requirements.txt
+
+      - name: Check the queue
+        id: queue
+        run: python -m autopilot next
+
+      - name: Research
+        if: steps.queue.outputs.pending != 'true'
+        run: python -m autopilot research
+
+      - name: Write the script (Anthropic API)
+        if: steps.queue.outputs.pending != 'true' && env.HAS_ANTHROPIC_API_KEY == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python -m autopilot write
+
+      - name: Write the script (Claude Code on a Pro/Max subscription)
+        if: steps.queue.outputs.pending != 'true' && env.HAS_ANTHROPIC_API_KEY != 'true' && env.HAS_CLAUDE_OAUTH == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Follow "Procedure: write the next video" in CLAUDE.md.
+            work/research.json has already been generated for this run.
+          claude_args: |
+            --max-turns 40
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(python -m autopilot validate:*)"
+
+      - name: Produce the video
+        id: produce
+        run: python -m autopilot produce
+
+      - name: Keep the video as a downloadable artifact
+        if: steps.produce.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-${{ github.run_number }}
+          path: |
+            work/*/final.mp4
+            work/*/thumbnail.jpg
+            work/*/metadata.json
+          retention-days: 14
+
+      - name: Upload to YouTube
+        if: inputs.dry_run != true
+        run: python -m autopilot upload
+
+      - name: Save history and queue
+        if: always()
+        env:
+          TITLE: ${{ steps.produce.outputs.title }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add content data
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Autopilot: ${TITLE:-update queue}"
+          for i in 1 2 3; do git pull --rebase origin "$GITHUB_REF_NAME" && git push && break; sleep 5; done

@@ -1,0 +1,100 @@
+{
+  "topic": "exercise type and dose for bone density after 40",
+  "title": "The Simple Exercise That Helps Your Bones After 40",
+  "description": "A 2026 network meta-analysis in The BMJ pooled 124 randomised trials (18,429 adults aged 40 and over) to compare exercise types for bone density and fractures. Brisk walking or jogging showed benefits at the spine and both hip sites, with meaningful effects around 600 MET-minutes a week, about 2 to 3 hours of brisk walking. The certainty of the evidence was low to moderate.\n\nKey takeaways:\n• Brisk walking or jogging: better bone density at the lumbar spine, femoral neck and total hip\n• Combined aerobic and resistance training: better bone density at the spine\n• Mixed aerobic and mind-body exercise may lower fracture risk (low certainty)\n• More is not always better: the dose-response curve looked like an upside-down U",
+  "tags": [
+    "bone health",
+    "bone density",
+    "osteoporosis prevention",
+    "walking benefits",
+    "exercise after 40",
+    "healthy aging",
+    "brisk walking",
+    "strong bones",
+    "fracture prevention",
+    "BMJ study",
+    "evidence based health",
+    "health tips"
+  ],
+  "thumbnail_text": "Bones After 40",
+  "scenes": [
+    {
+      "narration": "After forty, bone density slowly declines with age. A huge new study shows which exercise slows it best.",
+      "visual_query": "senior woman walking park",
+      "on_screen_text": "Bones after 40",
+      "source_ids": [
+        "PMID:42716561"
+      ]
+    },
+    {
+      "narration": "Researchers pooled 124 randomised trials, with more than eighteen thousand adults aged forty and up.",
+      "visual_query": "doctor reading research",
+      "on_screen_text": "124 trials",
+      "source_ids": [
+        "PMID:42716561"
+      ]
+    },
+    {
+      "narration": "The standout was simple. Brisk walking or jogging improved bone density at the spine and the hips.",
+      "visual_query": "man jogging morning",
+      "on_screen_text": "Brisk walking",
+      "source_ids": [
+        "PMID:42716561"
+      ]
+    },
+    {
+      "narration": "Mixing cardio with strength training also helped the spine.",
+      "visual_query": "woman lifting dumbbells",
+      "on_screen_text": "Cardio + strength",
+      "source_ids": [
+        "PMID:42716561"
+      ]
+    },
+    {
+      "narration": "How much? Meaningful benefits showed up at roughly two to three hours of brisk walking a week.",
+      "visual_query": "couple brisk walking",
+      "on_screen_text": "2-3 hours a week",
+      "source_ids": [
+        "PMID:42716561"
+      ]
+    },
+    {
+      "narration": "And more was not always better. The benefit curve looked like an upside-down U.",
+      "visual_query": "runner resting tired",
+      "on_screen_text": "",
+      "source_ids": [
+        "PMID:42716561"
+      ]
+    },
+    {
+      "narration": "Mixed aerobic workouts and mind-body exercise may also lower fracture risk, though that evidence is weaker.",
+      "visual_query": "older adults exercise class",
+      "on_screen_text": "Fewer fractures?",
+      "source_ids": [
+        "PMID:42716561"
+      ]
+    },
+    {
+      "narration": "Overall certainty was low to moderate, so treat this as a strong nudge, not a guarantee.",
+      "visual_query": "doctor talking patient",
+      "on_screen_text": "",
+      "source_ids": [
+        "PMID:42716561"
+      ]
+    },
+    {
+      "narration": "Your move: aim for about two and a half hours of brisk walking a week. Pair each walk with something you already do, like lunch, so it sticks. Have osteoporosis or past fractures? Ask your doctor what's safe for you.",
+      "visual_query": "walking lunch break city",
+      "on_screen_text": "Start this week",
+      "source_ids": []
+    }
+  ],
+  "sources": [
+    {
+      "id": "PMID:42716561",
+      "title": "Effect of exercise on bone health in middle aged and older adults: hierarchical network meta-analysis of randomised trials.",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/42716561/",
+      "note": "Network meta-analysis of 124 randomised trials, 18,429 adults aged 40+, The BMJ 2026"
+    }
+  ]
+}
