@@ -1,5 +1,6 @@
 // Trading engine for the live demo: a line-for-line port of tt/indicators.py,
-// tt/strategies.py (long-only), tt/risk.py and the tt/backtest.py loop, so the
+// tt/strategies.py (long-only trend, EMA and scalp), tt/risk.py and the
+// tt/backtest.py loop (stops and profit targets), so the
 // website trades by exactly the same rules as the Python bot. Parity with the
 // Python backtester is checked by tests/test_site_engine.py.
 //
@@ -40,6 +41,40 @@ export function atr(candles, n) {
   for (let i = n; i < tr.length; i++) {
     a = (a * (n - 1) + tr[i]) / n;
     out[i] = a;
+  }
+  return out;
+}
+
+export function sma(values, n) {
+  const out = new Array(values.length).fill(null);
+  let s = 0;
+  for (let i = 0; i < values.length; i++) {
+    s += values[i];
+    if (i >= n) s -= values[i - n];
+    if (i >= n - 1) out[i] = s / n;
+  }
+  return out;
+}
+
+// population standard deviation over the last n values (Bollinger bands)
+export function rollingStd(values, n) {
+  const out = new Array(values.length).fill(null);
+  if (!values.length) return out;
+  const ref = values[0];
+  let s = 0, s2 = 0;
+  for (let i = 0; i < values.length; i++) {
+    const d = values[i] - ref;
+    s += d;
+    s2 += d * d;
+    if (i >= n) {
+      const old = values[i - n] - ref;
+      s -= old;
+      s2 -= old * old;
+    }
+    if (i >= n - 1) {
+      const mean = s / n;
+      out[i] = Math.max(s2 / n - mean * mean, 0) ** 0.5;
+    }
   }
   return out;
 }
@@ -115,7 +150,43 @@ export class EmaCross {
   }
 }
 
-export const STRATEGIES = { trend: TrendBreakout, ema: EmaCross };
+// Short-term scalper (see tt/strategies.py Scalp): small fixed target and
+// stop in ATR units, plus a time limit. Long-only here.
+export class Scalp {
+  constructor({ mode = "bounce", n = 20, k = 2.0, trendN = 100, atrN = 14, tp = 1.0, sl = 1.0, maxBars = 12 } = {}) {
+    Object.assign(this, { mode, n, k, trendN, atrN, tp, sl, maxBars });
+    this.name = "scalp";
+    this.warmup = Math.max(n, trendN, atrN) + 1;
+  }
+  prepare(c) {
+    const closes = c.map((x) => x.c);
+    this.c = closes;
+    this.mid = sma(closes, this.n);
+    this.sd = rollingStd(closes, this.n);
+    this.trend = ema(closes, this.trendN);
+    this.atr = atr(c, this.atrN);
+    [this.hi, this.lo] = donchian(c, this.n);
+  }
+  signal(i, side, held = 0) {
+    const c = this.c[i], a = this.atr[i], t = this.trend[i];
+    const mid = this.mid[i], sd = this.sd[i], hi = this.hi[i], lo = this.lo[i];
+    if (a == null || t == null || mid == null || sd == null || hi == null || lo == null || a <= 0) return { side: FLAT, stop: null };
+    if (side !== FLAT) return held >= this.maxBars ? { side: FLAT, stop: null } : { side, stop: null };
+    const goLong = this.mode === "bounce" ? c > t && c < mid - this.k * sd : c > t && c > hi;
+    if (goLong) return { side: LONG, stop: c - this.sl * a, take: c + this.tp * a };
+    return { side: FLAT, stop: null };
+  }
+  // Approximate entry condition for the forming candle i, from the last closed one.
+  trigger(i, side) {
+    const j = i - 1;
+    if (side === LONG || this.trend[j] == null || this.sd[j] == null) return null;
+    return this.mode === "bounce"
+      ? { buyBelow: this.mid[j] - this.k * this.sd[j], trendAbove: this.trend[j] }
+      : { buyAbove: this.hi[i], trendAbove: this.trend[j] };
+  }
+}
+
+export const STRATEGIES = { trend: TrendBreakout, ema: EmaCross, scalp: Scalp };
 
 // ---------- risk ----------
 export function positionSize(equity, entry, stop, risk) {
@@ -184,10 +255,10 @@ export function run(candles, strategy, cfg) {
           if (qty > 0 && qty * entry >= minNotional) {
             const f = qty * entry * fee;
             cash -= f;
-            pos = { side: want, qty, entryTs: bar.ts, entry, stop: pending.stop,
+            pos = { side: want, qty, entryTs: bar.ts, entry, stop: pending.stop, take: pending.take ?? null,
                     risk: qty * Math.abs(entry - pending.stop), fees: f, pnl: 0 };
             entryBar = i;
-            out.events.push({ ts: bar.ts, kind: "buy", price: entry, qty, fee: f, stop: pending.stop });
+            out.events.push({ ts: bar.ts, kind: "buy", price: entry, qty, fee: f, stop: pending.stop, take: pos.take });
           } else if (qty > 0) {
             out.events.push({ ts: bar.ts, kind: "skip", price: entry,
               reason: `order of ${(qty * entry).toFixed(2)} USDT is below the ${minNotional} USDT exchange minimum` });
@@ -208,6 +279,11 @@ export function run(candles, strategy, cfg) {
       cash += close(pos, Math.min(bar.o, pos.stop), bar.ts, "stop");
       pos = null;
     }
+    // profit target, checked after the stop (a bar touching both counts as the stop)
+    if (pos && pos.take != null && bar.h >= pos.take) {
+      cash += close(pos, Math.max(bar.o, pos.take), bar.ts, "target");
+      pos = null;
+    }
     // 3) mark to market
     const eq = cash + (pos ? pos.side * pos.qty * (bar.c - pos.entry) : 0);
     out.equity.push([bar.ts, eq]);
@@ -221,6 +297,8 @@ export function run(candles, strategy, cfg) {
   }
   out.cash = cash;
   out.position = pos;
+  out.entryBar = entryBar;
+  out.closeTrade = close;
   out.guard = guard;
   out.strategy = strategy;
   if (live && candles.length) {
@@ -239,4 +317,16 @@ export function buyAndHold(candles, { start, equity = 10, fee = 0.001, slippage 
   const f = qty * entry * fee;
   const curve = candles.slice(i).map((x) => [x.ts, equity - f + qty * (x.c - entry)]);
   return { entry, qty, fee: f, curve, entryTs: candles[i].ts };
+}
+
+// The "Stop" button: sell any open position at `price` (with fee and
+// slippage, like any other fill) and return the final cash balance.
+export function closeOut(out, price, ts) {
+  if (out.position) {
+    out.cash += out.closeTrade(out.position, price, ts, "stopped by you");
+    out.position = null;
+  }
+  if (out.equity.length) out.equity[out.equity.length - 1] = [out.equity[out.equity.length - 1][0], out.cash];
+  out.trigger = null;
+  return out.cash;
 }

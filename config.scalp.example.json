@@ -1,0 +1,23 @@
+{
+  "mode": "paper",
+  "exchange": "bybit",
+  "market_type": "spot",
+  "symbol": "BTC/USDT",
+  "timeframe": "5m",
+  "strategy": "scalp",
+  "params": {"mode": "bounce", "tp": 1.0, "sl": 1.0, "max_bars": 12},
+  "risk": {
+    "risk_per_trade": 0.02,
+    "max_leverage": 1.0,
+    "max_daily_loss": 0.03,
+    "max_drawdown": 0.20
+  },
+  "paper_equity": 10,
+  "fee": 0.001,
+  "slippage": 0.0001,
+  "poll_seconds": 10,
+  "state_file": "state/scalp_bot.json",
+  "paper_state_file": "state/scalp_paper.json",
+  "api_key_env": "BYBIT_API_KEY",
+  "secret_env": "BYBIT_API_SECRET"
+}

@@ -7,7 +7,10 @@
 // a fallback, so the open position is marked to the market as it moves.
 
 import { H4, run, buyAndHold, STRATEGIES } from "./engine.js";
-import { h, legend, lineChart, niceTicks, timeTicks } from "./chart.js";
+import { legend, lineChart, niceTicks, timeTicks, h } from "./chart.js";
+import { Feed } from "./feed.js";
+import { $, fmtPx, fmtUsd, signed, pct, qtyFmt, when, clock, heroNumber, deltaEl, setPill,
+         keepTooltip, focusedIn, countdown, describe } from "./ui.js";
 
 const START = Date.UTC(2026, 9, 11, 0, 0, 0);          // 11 Oct 2026 00:00 UTC
 const ANCHOR = START - 300 * H4;                        // fixed history window: identical indicators for everyone
@@ -17,105 +20,18 @@ const DEMO = {
 };
 const MARKETS = { BTC: "BTCUSDT", ETH: "ETHUSDT", SOL: "SOLUSDT" };
 const STRATS = { trend: "Trend breakout", ema: "EMA cross" };
-const REST = "https://data-api.binance.vision/api/v3/klines";
-const WS_URL = "wss://data-stream.binance.vision/stream?streams=" +
-  Object.values(MARKETS).map((s) => s.toLowerCase() + "@kline_4h").join("/");
-const POLL_MS = 5000;
 
-const store = Object.fromEntries(Object.keys(MARKETS).map((m) => [m, []]));
 const results = {};          // market -> { trend, ema, hold }
 const dirty = new Set();
 let sel = { market: "BTC", strat: "trend" };
-let feed = "connecting";     // stream | poll | down | connecting
-let lastTick = 0, ws = null, wsRetry = 0, pollTimer = null, chartsDrawnAt = 0;
+let chartsDrawnAt = 0;
 let charts = {};
-
-const $ = (id) => document.getElementById(id);
-const fmtPx = (v) => v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtUsd = (v, d = 4) => v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
-const signed = (v, d = 4) => (v > 0 ? "+" : v < 0 ? "−" : "") + fmtUsd(Math.abs(v), d);
-const pct = (x, d = 2) => (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x * 100).toFixed(d) + "%";
-const qtyFmt = (q) => q.toPrecision(4);
-const when = (ts) => new Date(ts).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-const clock = (ts) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-// ---------------- market data ----------------
-function upsert(market, k) {
-  const arr = store[market];
-  const last = arr[arr.length - 1];
-  if (!last || k.ts > last.ts) arr.push(k);
-  else if (k.ts === last.ts) arr[arr.length - 1] = k;
-  else {
-    const i = arr.findIndex((x) => x.ts === k.ts);
-    if (i >= 0) arr[i] = k;
-  }
-  dirty.add(market);
-  lastTick = Date.now();
-}
-
-async function fetchFrom(market, startTime) {
-  for (let from = startTime; ;) {
-    const url = `${REST}?symbol=${MARKETS[market]}&interval=4h&limit=1000&startTime=${from}`;
-    const r = await fetch(url, { cache: "no-store" });
-    if (!r.ok) throw new Error(`Binance ${r.status}`);
-    const rows = await r.json();
-    for (const x of rows) upsert(market, { ts: x[0], o: +x[1], h: +x[2], l: +x[3], c: +x[4] });
-    if (rows.length < 1000) return;
-    from = rows[rows.length - 1][0] + H4;
-  }
-}
-
-// Load history the first time; afterwards fetch only from the latest candle on.
-async function catchUp() {
-  await Promise.all(Object.keys(MARKETS).map((m) => {
-    const arr = store[m];
-    return fetchFrom(m, arr.length ? arr[arr.length - 1].ts : ANCHOR);
-  }));
-}
-
-function setFeed(state) {
-  feed = state;
-  const pill = $("live-status");
-  pill.dataset.state = state;
-  pill.lastElementChild.textContent = {
-    stream: "Live · streaming prices",
-    poll: "Live · updating every 5 s",
-    down: "Can't reach market data · retrying",
-    connecting: "Connecting…",
-  }[state];
-}
-
-function startPolling() {
-  if (pollTimer) return;
-  pollTimer = setInterval(async () => {
-    if (document.hidden) return;
-    try { await catchUp(); if (feed !== "stream") setFeed("poll"); }
-    catch { if (feed !== "stream") setFeed("down"); }
-  }, POLL_MS);
-}
-function stopPolling() { clearInterval(pollTimer); pollTimer = null; }
-
-function connect() {
-  if (!("WebSocket" in window)) { startPolling(); return; }
-  try { ws = new WebSocket(WS_URL); } catch { startPolling(); return; }
-  ws.onopen = () => { wsRetry = 0; setFeed("stream"); stopPolling(); catchUp().catch(() => {}); };
-  ws.onmessage = (ev) => {
-    let msg;
-    try { msg = JSON.parse(ev.data); } catch { return; }
-    const k = msg && msg.data && msg.data.k;
-    const market = k && Object.keys(MARKETS).find((m) => MARKETS[m] === k.s);
-    if (!market) return;
-    upsert(market, { ts: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c });
-  };
-  ws.onclose = () => {
-    ws = null;
-    if (feed === "stream") setFeed("poll");
-    startPolling();
-    wsRetry = Math.min(wsRetry + 1, 6);
-    setTimeout(connect, 5000 * 2 ** (wsRetry - 1));   // 5 s, 10 s … ~2.5 min
-  };
-  ws.onerror = () => { try { ws.close(); } catch { /* closing anyway */ } };
-}
+const feed = new Feed({
+  markets: MARKETS, interval: "4h", anchor: ANCHOR,
+  onData: (m) => dirty.add(m),
+  onState: (st) => setPill($("live-status"), st),
+});
+const store = feed.store;
 
 // ---------------- computing the accounts ----------------
 function compute() {
@@ -135,46 +51,6 @@ const equityNow = (r) => r.equity.length ? r.equity[r.equity.length - 1][1] : DE
 const holdNow = (hd) => hd && hd.curve.length ? hd.curve[hd.curve.length - 1][1] : DEMO.equity;
 
 // ---------------- rendering ----------------
-// 10.0371 -> "10.03" with the last two digits smaller: a 10 USDT account moves in fractions of a cent
-function heroNumber(el, v, unit = true) {
-  const s = fmtUsd(v, 4);
-  el.textContent = "";
-  el.append(document.createTextNode(s.slice(0, -2)), h("small", "dim", s.slice(-2)));
-  if (unit) el.append(h("small", null, " USDT"));
-}
-
-function deltaEl(el, change, base) {
-  el.className = "delta " + (change > 0 ? "up" : change < 0 ? "down" : "");
-  el.textContent = `${signed(change)} USDT (${pct(change / base)}) since start`;
-}
-
-function whyText(r, c, market) {
-  const price = c[c.length - 1].c;
-  const t = r.trigger;
-  const pos = r.position;
-  if (r.halted) return `Stopped for good: ${r.halted}. A real bot would now wait for you to review it.`;
-  if (pos) {
-    const parts = [`Holding ${qtyFmt(pos.qty)} ${market}, bought at ${fmtPx(pos.entry)}.`,
-      `Stop at ${fmtPx(pos.stop)}, ${Math.abs((pos.stop / price - 1) * 100).toFixed(1)}% below the live price, checked on every price update.`];
-    if (t && t.sellBelow != null) parts.push(`It also sells if this 4-hour candle closes below ${fmtPx(t.sellBelow)}.`);
-    return parts.join(" ");
-  }
-  if (!t || t.buyAbove == null) return "Warming up its indicators.";
-  const gap = t.buyAbove / price - 1;
-  const away = `${Math.abs(gap * 100).toFixed(1)}% ${gap > 0 ? "above" : "below"} the live price`;
-  if (sel.strat === "ema") {
-    const S = r.strategy, i = c.length - 2;                  // last closed candle
-    const f = S.f[i], sl = S.s[i];
-    const spread = `the 20-candle average is ${Math.abs((f / sl - 1) * 100).toFixed(2)}% ${f < sl ? "below" : "above"} the 100-candle average`;
-    return `No position. It buys when the 20-candle average closes above the 100-candle average; right now ${spread}. ` +
-      (gap > 0 ? `To cross on this candle alone it would need to close above ${fmtPx(t.buyAbove)}, ${away}, so it is more likely to happen gradually.`
-               : `The price is high enough that it crosses if this candle closes above ${fmtPx(t.buyAbove)}.`);
-  }
-  if (gap > 0)
-    return `No position. It buys if a 4-hour candle closes above ${fmtPx(t.buyAbove)}, a new 55-candle high, which is ${away}.`;
-  return `No position. The price is above the 55-candle high of ${fmtPx(t.buyAbove)}, so it buys when this candle closes unless the price falls back below it.`;
-}
-
 function renderAccount() {
   const m = sel.market, c = store[m], R = results[m];
   if (!R || !c.length) return;
@@ -185,7 +61,7 @@ function renderAccount() {
   $("demo-name").textContent = `${STRATS[sel.strat]} bot · ${m}/USDT`;
   heroNumber($("demo-equity"), eq);
   deltaEl($("demo-change"), eq - DEMO.equity, DEMO.equity);
-  $("demo-why").textContent = whyText(r, c, m);
+  $("demo-why").textContent = describe(r, c, sel.strat, m, H4);
   const wins = r.trades.filter((t) => t.pnl > 0).length;
   let peak = DEMO.equity, worst = 0;
   for (const [, v] of r.equity) { peak = Math.max(peak, v); worst = Math.max(worst, 1 - v / peak); }
@@ -200,12 +76,10 @@ function renderAccount() {
   $("demo-hold-meta").textContent = `${signed(hc)} USDT (${pct(hc / DEMO.equity)}) · bought ${R.hold ? fmtPx(R.hold.entry) : "—"}`;
 
   $("demo-price").textContent = fmtPx(last.c);
-  $("demo-price-meta").textContent = `${m}/USDT · Binance · ${lastTick ? Math.max(0, Math.round((Date.now() - lastTick) / 1000)) + " s ago" : "…"}`;
+  $("demo-price-meta").textContent = `${m}/USDT · Binance · ${feed.lastTick ? Math.max(0, Math.round((Date.now() - feed.lastTick) / 1000)) + " s ago" : "…"}`;
 
   const next = last.ts + H4;
-  const left = Math.max(0, next - Date.now());
-  const hh = Math.floor(left / 3600e3), mm = Math.floor((left % 3600e3) / 60e3), ss = Math.floor((left % 60e3) / 1000);
-  $("demo-next").textContent = hh ? `${hh}h ${String(mm).padStart(2, "0")}m` : `${mm}m ${String(ss).padStart(2, "0")}s`;
+  $("demo-next").textContent = countdown(next - Date.now());
   $("demo-next-meta").textContent = `at ${clock(next)} your time, when this 4-hour candle closes`;
 }
 
@@ -287,19 +161,12 @@ function renderAll() {
   }
 }
 
-// A redraw replaces the SVG: carry over keyboard focus and an open readout.
-function keepTooltip(old, fresh, root, hadFocus) {
-  if (hadFocus) fresh.svg.focus({ preventScroll: true });
-  if (old && (old.isOpen() || hadFocus)) fresh.show(old.index());
-}
-const focusedIn = (id) => $(id).contains(document.activeElement);
-
 function renderCharts() {
   const m = sel.market, c = store[m], R = results[m];
   if (!R || c.length < 2) return;
   const r = R[sel.strat];
-  const now = Date.now();
   const live = c[c.length - 1];
+  const now = Math.max(Date.now(), live.ts + 1);   // device clocks can run behind the exchange
 
   // price, last 7 days: closed candles at their close time, then the live price now
   const from = live.ts - 42 * H4;
@@ -329,7 +196,7 @@ function renderCharts() {
     levels: near, vlines: [{ x: START, label: "Demo start" }], markers, livePulse: true,
     right: 12, left: 52, step: 1, bigStep: 6,
   });
-  keepTooltip(oldP, charts.price, $("demo-price-chart"), focP);
+  keepTooltip(oldP, charts.price, focP);
 
   // account value since the start: bot vs buy & hold
   const eqPts = r.equity;                                   // [open ts, value at that candle's close]
@@ -357,7 +224,7 @@ function renderCharts() {
     tipFmt: (v) => fmtUsd(v) + " USDT", tipTitle: (x, i) => i === 0 ? `Start · ${when(x)}` : i === ex.length - 1 ? `Live · ${clock(x)}` : when(x),
     livePulse: true, right: 12, left: 52, step: 1, bigStep: 6,
   });
-  keepTooltip(oldE, charts.eq, $("demo-equity-chart"), focE);
+  keepTooltip(oldE, charts.eq, focE);
   chartsDrawnAt = Date.now();
 }
 
@@ -386,21 +253,11 @@ document.querySelectorAll("[data-dm]").forEach((b) => b.addEventListener("click"
 document.querySelectorAll("[data-ds]").forEach((b) => b.addEventListener("click", () => select(sel.market, b.dataset.ds)));
 let rt;
 window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => render(true), 150); });
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) catchUp().then(() => render(true)).catch(() => {});
-});
+document.addEventListener("visibilitychange", () => { if (!document.hidden) render(true); });
 
-setFeed("connecting");
-catchUp()
-  .then(() => { render(true); connect(); })
+feed.start()
+  .then(() => render(true))
   .catch((e) => {
-    setFeed("down");
     $("demo-why").textContent = `Couldn't load market data from Binance (${e.message}). Retrying every 5 seconds.`;
-    startPolling();
-    connect();
   });
-setInterval(() => {
-  // watchdog: if the stream goes quiet, fetch over REST
-  if (feed === "stream" && Date.now() - lastTick > 30000 && !document.hidden) catchUp().catch(() => {});
-  render(false);
-}, 1000);
+setInterval(() => render(false), 1000);

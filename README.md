@@ -113,8 +113,29 @@ Only move to the next step when the current one holds up. If paper results diffe
 | `trend` | Buy a breakout above the 55-bar high; exit below the 20-bar low or on a 3×ATR trailing stop. Set `allow_short` for perps. | ~35–45% win rate, big winners |
 | `ema` | Long while the fast EMA is above the slow EMA, with an ATR stop. | Similar; more trades |
 | `rsi` | Buy RSI(3) < 15 dips only above the 200-bar SMA; exit on a bounce or after 10 bars. | High win rate; **lost money after costs here** |
+| `scalp` | For 1–15 minute candles. `mode: "bounce"` buys a close below the lower Bollinger band in an uptrend. `mode: "break"` buys a new 20-candle high. Both exit at a 1×ATR target, a 1×ATR stop, or after 12 candles. | Hundreds to thousands of trades a year; **fees beat it, see below** |
 
 Add your own by subclassing `Strategy` in `tt/strategies.py`. Implement `prepare()` (compute indicators once) and `signal(i, side, bars_held)`. The same class then works in the backtest, the paper bot and the live bot.
+
+### Scalping: tested, and it loses
+
+The `scalp` strategy was tested on real Binance candles:
+- **Data:** one year of 5-minute candles for BTC, ETH and SOL (Oct 2025 to Oct 2026), plus 90 days of 1-minute BTC.
+- **Cost levels:** four, from Bybit spot market orders down to zero fees.
+- **Walk-forward:** the cheapest real cost level was also tested on unseen data.
+
+| Cost level | Bounce, BTC 5m | Break, BTC 5m |
+|---|---:|---:|
+| Bybit spot, market orders (0.1% fee) | **−68%** | **−100%** |
+| Bybit perps, market orders (0.055%) | −71% | −100% |
+| Bybit perps, limit orders (0.02%) | −28% | −98% |
+| No fees at all | +8% | −54% |
+
+- **The edge is smaller than any fee.** "Bounce" catches about +0.008% per trade on BTC and +0.015% on SOL before costs. A limit-order round trip costs 0.04%, and a spot market-order round trip costs 0.2%. "Break" loses even with no fees.
+- **Unseen data confirms it.** Re-tuned on the past and traded on the next unseen period, it was profitable in **0 of 32** walk-forward periods (both modes, 4 datasets, 4 periods each).
+- **The pattern holds everywhere.** ETH, SOL and 1-minute BTC show the same thing.
+- **Before trusting any scalper,** run `python -m tt backtest --data <5m csv> --strategy scalp --fee <your fee>`. It prints, per trade, what the market gave and what costs took.
+- **It's in the toolkit and the live demo so you can watch it,** not because it works. `config.scalp.example.json` runs it in paper mode only.
 
 ### Risk controls (in `config.json` → `risk`)
 
@@ -195,14 +216,16 @@ Android kills background apps to save battery. To keep the bot alive:
 
 The project site (https://tt1-rouge.vercel.app) lives in `site/`: a static page with no build step, deployed on Vercel from this repo. Every push to the default branch redeploys it.
 
-It includes a **live 10 USDT paper-trading demo** that started on 11 October 2026 at 00:00 UTC. It runs the trend and EMA bots on BTC, ETH and SOL against live Binance prices, next to a buy-and-hold benchmark.
+It includes a **live 10 USDT paper-trading demo** in two parts:
+- **Your bot:** pick a market and a strategy (scalper on 5-minute candles, or trend/EMA on 4-hour), then press **Start**. It trades 10 USDT of fake money live from that moment. **Stop** sells anything it holds at the live price and freezes the result. The run is saved in your browser (`localStorage`) as just its start time, start price and choices. Everything else is replayed from candles, so it keeps going while the page is closed. The last five runs are listed.
+- **Public accounts:** trend and EMA bots on BTC, ETH and SOL, running since 11 October 2026 at 00:00 UTC, next to a buy-and-hold benchmark. They can't be stopped, and every visitor sees the same accounts.
 - **How it works.** The account is rebuilt in the visitor's browser from public price history since the start time. Every visitor sees the same account, and it needs no server or database. The live price streams over Binance's WebSocket, with REST polling as a fallback.
 - **Same rules as the bot.** `site/js/engine.js` is a port of the Python engine. `tests/test_site_engine.py` checks that it makes identical trades (it needs Node.js and is skipped without it).
 
 To refresh the backtest numbers after downloading new data with `tt fetch`, run:
 
 ```bash
-python scripts/build_site.py      # rewrites site/data/results.json
+python scripts/build_site.py      # rewrites site/data/results.json (and scalp.json if 5m data exists)
 ```
 
 ## Development

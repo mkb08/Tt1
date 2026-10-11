@@ -12,7 +12,7 @@ import unittest
 from tt import backtest as bt
 from tt.data import load_csv, synthetic
 from tt.risk import RiskConfig
-from tt.strategies import EmaCross, TrendBreakout
+from tt.strategies import EmaCross, Scalp, TrendBreakout
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NODE = shutil.which("node")
@@ -24,6 +24,9 @@ CASES = [
     ("trend", TrendBreakout, {"riskPerTrade": 0.02, "maxLeverage": 1, "maxDailyLoss": 0.03, "maxDrawdown": 0.2}),
     ("ema", EmaCross, {"riskPerTrade": 0.02, "maxLeverage": 1, "maxDailyLoss": 0.03, "maxDrawdown": 0.2}),
     ("trend", TrendBreakout, {"riskPerTrade": 0.08, "maxLeverage": 3, "maxDailyLoss": 0.03, "maxDrawdown": 0.1}),
+    ("scalp", Scalp, {"riskPerTrade": 0.02, "maxLeverage": 1, "maxDailyLoss": 1, "maxDrawdown": 1}),
+    ("scalp", Scalp, {"riskPerTrade": 0.02, "maxLeverage": 1, "maxDailyLoss": 0.03, "maxDrawdown": 0.2}),
+    ("scalp_break", lambda: Scalp(mode="break"), {"riskPerTrade": 0.02, "maxLeverage": 1, "maxDailyLoss": 1, "maxDrawdown": 1}),
 ]
 
 
@@ -39,7 +42,8 @@ def python_run(candles, cls, risk, start):
 class SiteEngineParity(unittest.TestCase):
     def compare(self, candles, start):
         fixture = {"candles": [[c.ts, c.open, c.high, c.low, c.close] for c in candles],
-                   "cases": [{"strategy": name, "cfg": {"equity": 10, "fee": 0.001, "slippage": 0.0005,
+                   "cases": [{"strategy": name.split("_")[0], "params": {"mode": "break"} if name == "scalp_break" else {},
+                              "cfg": {"equity": 10, "fee": 0.001, "slippage": 0.0005,
                                                          "start": candles[start].ts, "risk": risk}}
                              for name, _, risk in CASES]}
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
@@ -74,6 +78,12 @@ class SiteEngineParity(unittest.TestCase):
         if not os.path.exists(path):
             self.skipTest("no data/btc_4h.csv")
         self.compare(load_csv(path)[-4000:], start=300)
+
+    def test_real_btc_5m_if_downloaded(self):
+        path = os.path.join(ROOT, "data", "btc_5m.csv")
+        if not os.path.exists(path):
+            self.skipTest("no data/btc_5m.csv")
+        self.compare(load_csv(path)[-6000:], start=300)
 
 
 if __name__ == "__main__":

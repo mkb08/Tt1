@@ -237,6 +237,28 @@ ol.steps b { color: var(--text); }
 .kenya .date { font-weight: 700; color: var(--text); }
 
 /* live demo */
+.sub-head { margin-top: 28px; }
+.sub-head h3 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
+.state-badge {
+  display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--raised); color: var(--text); font-size: 13px; font-weight: 600;
+}
+.state-badge i { width: 9px; height: 9px; border-radius: 2px; background: var(--axis); }
+.state-badge[data-state="running"] i { border-radius: 50%; background: #0ca30c; animation: blink 2s ease-in-out infinite; }
+.state-badge[data-state="stopped"] i { background: #d03b3b; }
+.controls { display: flex; gap: 8px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+.btn.stop { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--border)); }
+.seg button:disabled { cursor: not-allowed; opacity: .55; }
+.seg button[aria-pressed="true"]:disabled { opacity: 1; }
+.lock { margin: -6px 0 10px; }
+.warnline { background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 10px; padding: 10px 14px; font-size: 14px; color: var(--text); margin: 0 0 12px; }
+.warnline:empty { display: none; }
+.past { margin: 18px 0 6px; font-size: 14px; }
+.history { margin: 0; padding-left: 18px; font-size: 14px; color: var(--text-2); }
+.history li + li { margin-top: 4px; }
+.history b.pos { color: var(--good); }
+.history b.neg { color: var(--bad); }
 .live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 8px; }
 .live-head h2 { margin: 0; }
 .live-pill {
@@ -312,7 +334,7 @@ footer p { margin: 0 0 8px; max-width: 75ch; }
     <p class="lede">tt runs in Termux on Android. It backtests strategies with real fees, slippage and funding, tests them on data they never saw, paper trades on live prices, and only then trades or copy-trades on Bybit and 100+ other exchanges, with hard loss limits.</p>
     <div class="cta">
       <a class="btn primary" href="#install">Install on Termux</a>
-      <a class="btn" href="#live">Watch the live demo</a>
+      <a class="btn" href="#live">Try the live demo</a>
       <a class="btn" href="https://github.com/mkb08/Tt1">View source</a>
     </div>
   </div>
@@ -330,11 +352,97 @@ footer p { margin: 0 0 8px; max-width: 75ch; }
 
   <section id="live">
     <div class="wrap">
-      <div class="live-head">
-        <h2>Live demo: 10 USDT of fake money</h2>
+      <h2>Live demo: 10 USDT of fake money</h2>
+      <p class="sub">Bots trading live Binance prices by exactly the same rules as the backtests and the phone bot. No real money and no real orders.</p>
+
+      <div class="live-head sub-head">
+        <h3>Your bot</h3>
+        <span class="state-badge" id="mb-state" data-state="idle"><i aria-hidden="true"></i><span>Not started</span></span>
+        <span class="live-pill" id="mb-feed" role="status" data-state="connecting"><i aria-hidden="true"></i><span>Connecting…</span></span>
+      </div>
+      <p class="sub">Pick a market and a strategy, then press Start. The bot gets 10 USDT of fake money and trades live from that moment. Stop sells anything it holds at the live price. The run is saved in this browser and keeps going while the page is closed.</p>
+      <div class="filters">
+        <div class="seg" role="group" aria-label="Your bot's market">
+          <button type="button" data-mbm="BTC" aria-pressed="true">BTC</button>
+          <button type="button" data-mbm="ETH" aria-pressed="false">ETH</button>
+          <button type="button" data-mbm="SOL" aria-pressed="false">SOL</button>
+        </div>
+        <div class="seg" role="group" aria-label="Your bot's strategy">
+          <button type="button" data-mbs="scalp" aria-pressed="true">Scalper · 5 min</button>
+          <button type="button" data-mbs="trend" aria-pressed="false">Trend · 4 h</button>
+          <button type="button" data-mbs="ema" aria-pressed="false">EMA · 4 h</button>
+        </div>
+        <div class="controls">
+          <button type="button" class="btn primary" id="mb-start" disabled>Start bot</button>
+          <button type="button" class="btn stop" id="mb-stop" disabled>Stop bot</button>
+        </div>
+      </div>
+      <p class="cap lock" id="mb-lock" hidden>Stop the bot to change its market or strategy.</p>
+      <p class="warnline" id="mb-note"></p>
+
+      <div class="live-top">
+        <div class="card pad account">
+          <div class="label"><span class="key" style="border-color:var(--s1)"></span><span id="mb-name">Scalper bot · BTC/USDT</span></div>
+          <div class="hero-num" id="mb-equity">10.00<small> USDT</small></div>
+          <div class="delta" id="mb-change">Press Start to give it 10 USDT of fake money</div>
+          <p class="why" id="mb-why">Loading live prices from Binance…</p>
+          <dl class="facts">
+            <div><dd id="mb-f-trades">0</dd><dt>Closed trades</dt></div>
+            <div><dd id="mb-f-win">—</dd><dt>Win rate</dt></div>
+            <div><dd id="mb-f-fees">0.0000</dd><dt>Fees paid (USDT)</dt></div>
+            <div><dd id="mb-f-time">—</dd><dt>Running time</dt></div>
+          </dl>
+        </div>
+        <div class="live-side">
+          <div class="card mini">
+            <div class="label"><span class="key" style="border-color:var(--s3)"></span>Buy &amp; hold since you started</div>
+            <div class="value" id="mb-hold">—</div>
+            <div class="meta" id="mb-hold-meta">10 USDT bought when you press Start</div>
+          </div>
+          <div class="card mini">
+            <div class="label">Live price</div>
+            <div class="value" id="mb-price">—</div>
+            <div class="meta" id="mb-price-meta">Binance</div>
+          </div>
+          <div class="card mini">
+            <div class="label">Next decision</div>
+            <div class="value" id="mb-next">—</div>
+            <div class="meta" id="mb-next-meta">when the candle closes</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="charts">
+        <div class="card pad chart-card">
+          <h3>Price</h3>
+          <p class="desc">Recent candles and the live price. ▲ buy, ▼ sell. Labelled lines are the bot's trigger, target and stop.</p>
+          <div class="plot" id="mb-price-chart"></div>
+        </div>
+        <div class="card pad chart-card" id="mb-eq-card" hidden>
+          <h3>Your bot's account value</h3>
+          <p class="desc">Against buying 10 USDT of the coin when you pressed Start</p>
+          <div class="legend" id="mb-eq-legend"></div>
+          <div class="plot" id="mb-equity-chart"></div>
+        </div>
+      </div>
+
+      <div class="card pad">
+        <h3 style="margin:0 0 4px;font-size:16px">Your bot's trades</h3>
+        <p class="desc" style="margin:0 0 10px;font-size:13px;color:var(--muted)">Newest first, in your local time</p>
+        <p class="empty" id="mb-log-empty">Start the bot to see its trades here.</p>
+        <div class="table-wrap"><table id="mb-log" class="compact" aria-label="Your bot's trades" hidden></table></div>
+        <div id="mb-history-wrap" hidden>
+          <h4 class="past">Past runs</h4>
+          <ul id="mb-history" class="history"></ul>
+        </div>
+      </div>
+      <p class="cap">Your bot's rules: the same engine as the phone bot. Each trade risks 2% of the account, with no leverage; orders under 5 USDT are skipped, as Bybit would reject them. Every fill pays Bybit's 0.1% spot fee and 0.01% slippage. Buying pauses for the day after a 3% loss and stops for good at a 20% drop. Decisions are made when each candle closes and filled at the next candle's open; stops and targets are checked against every price update.</p>
+
+      <div class="live-head sub-head">
+        <h3>Public accounts, running since 11 October</h3>
         <span class="live-pill" id="live-status" role="status" data-state="connecting"><i aria-hidden="true"></i><span>Connecting…</span></span>
       </div>
-      <p class="sub">Started <b>11 October 2026 at 00:00 UTC</b> (03:00 in Nairobi) with 10 USDT. It trades live Binance prices by exactly the same rules as the backtests and the phone bot. No real money and no real orders. Every visitor sees the same account.</p>
+      <p class="sub">Started <b>11 October 2026 at 00:00 UTC</b> (03:00 in Nairobi) with 10 USDT each. They can't be stopped, and every visitor sees the same accounts.</p>
 
       <div class="filters">
         <div class="seg" role="group" aria-label="Demo market">
@@ -744,5 +852,6 @@ scripts/run.sh paper --config config.json</pre>
     });
 </script>
 <script type="module" src="js/demo.js"></script>
+<script type="module" src="js/mybot.js"></script>
 </body>
 </html>

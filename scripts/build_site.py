@@ -3,6 +3,9 @@
 Needs the 4h CSVs from `python -m tt fetch` in data/ (btc_4h.csv, eth_4h.csv,
 sol_4h.csv). Run from the repo root:  python scripts/build_site.py
 Uses the same settings as the README tables, so the site and docs agree.
+
+If 5-minute CSVs are present too (btc_5m.csv, ...), it also writes
+site/data/scalp.json: the scalper's backtest at the live demo's costs.
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ from tt import backtest as bt  # noqa: E402
 from tt.__main__ import GRIDS  # noqa: E402
 from tt.data import load_csv  # noqa: E402
 from tt.risk import RiskConfig  # noqa: E402
-from tt.strategies import STRATEGIES, EmaCross, TrendBreakout  # noqa: E402
+from tt.strategies import STRATEGIES, EmaCross, Scalp, TrendBreakout  # noqa: E402
 
 DAY = 86_400_000
 RISK = RiskConfig(risk_per_trade=0.01, max_leverage=1.0, max_daily_loss=1.0, max_drawdown=1.0)
@@ -71,6 +74,27 @@ def market(path: str) -> dict:
     return out
 
 
+def scalp_report() -> dict | None:
+    """Scalper (bounce) on 5-minute candles at the "Your bot" demo's costs:
+    Bybit spot taker fee 0.1% and 0.01% slippage per fill; and at a 0.02%
+    limit-order fee for comparison. Risk limits off, to show the raw strategy."""
+    out = {}
+    risk = RiskConfig(risk_per_trade=0.02, max_leverage=1.0, max_daily_loss=1.0, max_drawdown=1.0)
+    for sym in ("btc", "eth", "sol"):
+        path = f"data/{sym}_5m.csv"
+        if not os.path.exists(path):
+            return None
+        c = load_csv(path)
+        row = {"start": dt.datetime.fromtimestamp(c[0].ts / 1000, dt.timezone.utc).date().isoformat(),
+               "end": dt.datetime.fromtimestamp(c[-1].ts / 1000, dt.timezone.utc).date().isoformat()}
+        for label, fee, slip in (("spot", 0.001, 0.0001), ("limit", 0.0002, 0.0)):
+            m = bt.backtest(c, Scalp(), equity=10.0, risk=risk, fee=fee, slippage=slip).metrics()
+            row[label] = {k: round(m[k], 6) for k in ("total_return", "max_drawdown", "win_rate", "avg_gross", "avg_cost", "avg_net")}
+            row[label]["trades"] = m["trades"]
+        out[sym.upper()] = row
+    return out
+
+
 def main():
     data = {"generated": dt.date.today().isoformat(),
             "settings": {"timeframe": "4h", "risk_per_trade": 0.01, "max_leverage": 1.0,
@@ -85,6 +109,11 @@ def main():
     with open("site/data/results.json", "w") as f:
         json.dump(data, f, separators=(",", ":"))
     print("wrote site/data/results.json", os.path.getsize("site/data/results.json"), "bytes")
+    scalp = scalp_report()
+    if scalp:
+        with open("site/data/scalp.json", "w") as f:
+            json.dump(scalp, f, separators=(",", ":"))
+        print("wrote site/data/scalp.json")
 
 
 if __name__ == "__main__":
