@@ -16,6 +16,7 @@ GRIDS = {
     "trend": {"entry": [20, 55, 100], "exit": [10, 20], "atr_mult": [2.0, 3.0, 4.0]},
     "ema": {"fast": [10, 20, 50], "slow": [100, 200], "atr_mult": [3.0, 4.0]},
     "rsi": {"entry": [10, 15, 25], "exit": [55, 70], "trend_n": [100, 200]},
+    "scalp": {"tp": [0.75, 1.0, 1.5], "sl": [1.0, 1.5], "max_bars": [6, 12]},
 }
 
 
@@ -34,6 +35,9 @@ def print_metrics(name: str, m: dict) -> None:
     print(f"  win rate      {m['win_rate']:.0%}   profit factor {m['profit_factor']:.2f}   "
           f"avg R {m['avg_r']:+.2f}")
     print(f"  exposure      {m['exposure']:.0%} of bars in the market")
+    if m["trades"]:
+        print(f"  per trade     market gave {m['avg_gross']:+.3%}, costs took {m['avg_cost']:.3%}, "
+              f"kept {m['avg_net']:+.3%} of position size")
     print(f"  fees paid     {m['fees_paid']:.2f}" + (f"   funding paid {m['funding_paid']:+.2f}"
                                                        if m['funding_paid'] else ""))
     if m["halted"]:

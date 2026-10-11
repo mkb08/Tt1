@@ -3,8 +3,9 @@
 A strategy precomputes causal indicators once with `prepare(candles)` and
 then answers `signal(i, side, bars_held)`: given the closed bar index i, the
 current position side and how many bars it has been held, what side should
-we hold from the next bar on, and where is the protective stop. Strategies
-keep no state between calls, so backtests and live runs behave the same.
+we hold from the next bar on, where is the protective stop and (optionally)
+the profit target. Strategies keep no state between calls, so backtests and
+live runs behave the same.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ LONG, FLAT, SHORT = 1, 0, -1
 class Signal:
     side: int                  # +1 long, 0 flat, -1 short
     stop: float | None = None  # stop price; while holding, only ever tightened
+    take: float | None = None  # profit target, fixed when the trade opens
 
 
 class Strategy:
@@ -144,8 +146,64 @@ class RsiReversion(Strategy):
         return Signal(FLAT)
 
 
+class Scalp(Strategy):
+    """Short-term scalper for 1-15 minute candles: small fixed target, fixed
+    stop, and a time limit.
+
+    mode "bounce": in an uptrend (close above the trend EMA) buy a close below
+    the lower Bollinger band, betting on a quick snap back.
+    mode "break": in an uptrend buy a close above the highest high of the last
+    `n` candles, betting on a quick follow-through.
+    Exits at entry +tp x ATR (target), -sl x ATR (stop), or after max_bars.
+    allow_short mirrors both rules for perpetual futures.
+
+    Scalps make many small trades, so fees decide the outcome: test with your
+    real fee level (taker vs maker) before trusting any result.
+    """
+
+    name = "scalp"
+
+    def __init__(self, mode: str = "bounce", n: int = 20, k: float = 2.0,
+                 trend_n: int = 100, atr_n: int = 14, tp: float = 1.0,
+                 sl: float = 1.0, max_bars: int = 12, allow_short: bool = False):
+        if mode not in ("bounce", "break"):
+            raise ValueError("mode must be 'bounce' or 'break'")
+        self.mode, self.n, self.k, self.trend_n, self.atr_n = mode, n, k, trend_n, atr_n
+        self.tp, self.sl, self.max_bars, self.allow_short = tp, sl, max_bars, allow_short
+        self.warmup = max(n, trend_n, atr_n) + 1
+
+    def prepare(self, candles):
+        closes = [c.close for c in candles]
+        self._c = closes
+        self._mid = ind.sma(closes, self.n)
+        self._sd = ind.rolling_std(closes, self.n)
+        self._trend = ind.ema(closes, self.trend_n)
+        self._atr = ind.atr(candles, self.atr_n)
+        self._hi, self._lo = ind.donchian(candles, self.n)
+
+    def signal(self, i, side, bars_held=0):
+        c, a, t = self._c[i], self._atr[i], self._trend[i]
+        mid, sd, hi, lo = self._mid[i], self._sd[i], self._hi[i], self._lo[i]
+        if None in (a, t, mid, sd, hi, lo) or a <= 0:
+            return Signal(FLAT)
+        if side != FLAT:
+            # target and stop were fixed at entry; only the clock can end it here
+            return Signal(FLAT) if bars_held >= self.max_bars else Signal(side)
+        if self.mode == "bounce":
+            go_long = c > t and c < mid - self.k * sd
+            go_short = c < t and c > mid + self.k * sd
+        else:
+            go_long = c > t and c > hi
+            go_short = c < t and c < lo
+        if go_long:
+            return Signal(LONG, c - self.sl * a, c + self.tp * a)
+        if go_short and self.allow_short:
+            return Signal(SHORT, c + self.sl * a, c - self.tp * a)
+        return Signal(FLAT)
+
+
 STRATEGIES: dict[str, type[Strategy]] = {
-    cls.name: cls for cls in (TrendBreakout, EmaCross, RsiReversion)
+    cls.name: cls for cls in (TrendBreakout, EmaCross, RsiReversion, Scalp)
 }
 
 

@@ -95,3 +95,25 @@ def donchian(candles: list[Candle], n: int) -> tuple[list[float | None], list[fl
         upper[i] = max(c.high for c in window)
         lower[i] = min(c.low for c in window)
     return upper, lower
+
+
+def rolling_std(values: list[float], n: int) -> list[float | None]:
+    """Population standard deviation over the last n values (Bollinger bands).
+    Running sums are taken relative to the first value to avoid cancellation."""
+    out: list[float | None] = [None] * len(values)
+    if not values:
+        return out
+    ref = values[0]
+    s = s2 = 0.0
+    for i, v in enumerate(values):
+        d = v - ref
+        s += d
+        s2 += d * d
+        if i >= n:
+            old = values[i - n] - ref
+            s -= old
+            s2 -= old * old
+        if i >= n - 1:
+            mean = s / n
+            out[i] = max(s2 / n - mean * mean, 0.0) ** 0.5
+    return out

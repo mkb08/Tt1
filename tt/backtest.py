@@ -33,6 +33,7 @@ class Trade:
     exit_ts: int = 0
     exit: float = 0.0
     stop: float | None = None
+    take: float | None = None
     risk: float = 0.0     # money at risk at entry (for R multiples)
     fees: float = 0.0
     funding: float = 0.0  # paid (+) or received (-) on perpetuals
@@ -71,6 +72,7 @@ class Result:
         wins = [t.pnl for t in self.trades if t.pnl > 0]
         losses = [t.pnl for t in self.trades if t.pnl <= 0]
         r_mults = [t.pnl / t.risk for t in self.trades if t.risk > 0]
+        notional = [(t, t.qty * t.entry) for t in self.trades if t.qty * t.entry > 0]
         return {
             "trades": len(self.trades),
             "total_return": total,
@@ -83,6 +85,11 @@ class Result:
             "avg_r": statistics.mean(r_mults) if r_mults else 0.0,
             "exposure": self.bars_in_market / max(n, 1),
             "fees_paid": sum(t.fees for t in self.trades),
+            # per trade, as a fraction of position size: what the market gave
+            # before costs, what costs took, and what was left
+            "avg_gross": statistics.mean((t.pnl + t.fees + t.funding) / v for t, v in notional) if notional else 0.0,
+            "avg_cost": statistics.mean((t.fees + t.funding) / v for t, v in notional) if notional else 0.0,
+            "avg_net": statistics.mean(t.pnl / v for t, v in notional) if notional else 0.0,
             "funding_paid": sum(t.funding for t in self.trades),
             "buy_hold_return": self.buy_hold_return,
             "buy_hold_mdd": self.buy_hold_mdd,
@@ -165,7 +172,7 @@ def backtest(candles: list[Candle], strategy: Strategy, *,
                     if qty > 0:
                         f = qty * entry * fee
                         cash -= f
-                        pos = Trade(want, qty, bar.ts, entry, stop=pending.stop,
+                        pos = Trade(want, qty, bar.ts, entry, stop=pending.stop, take=pending.take,
                                     risk=qty * abs(entry - pending.stop), fees=f)
                         entry_bar = i
                 elif guard.halted:
@@ -201,6 +208,14 @@ def backtest(candles: list[Candle], strategy: Strategy, *,
                 pos = None
             elif pos and pos.side != LONG and bar.high >= pos.stop:
                 cash += close(pos, max(bar.open, pos.stop), bar.ts, "stop")
+                pos = None
+        # profit target (checked after the stop: if a bar touches both, assume the worse)
+        if pos and pos.take is not None:
+            if pos.side == LONG and bar.high >= pos.take:
+                cash += close(pos, max(bar.open, pos.take), bar.ts, "target")
+                pos = None
+            elif pos and pos.side != LONG and bar.low <= pos.take:
+                cash += close(pos, min(bar.open, pos.take), bar.ts, "target")
                 pos = None
 
         # 3) mark to market

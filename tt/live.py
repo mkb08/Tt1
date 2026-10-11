@@ -48,18 +48,22 @@ class Bot:
     def _close(self, qty: float, why: str):
         res = self.broker.market_order(self.symbol, -qty, reduce_only=True)
         self.n.alert(f"CLOSE {self.symbol} {qty:+.6f} ({why}) -> {res}")
-        self.state.update(side=FLAT, stop=None, entry_ts=None)
+        self.state.update(side=FLAT, stop=None, take=None, entry_ts=None)
 
     def check_stop(self, price: float, qty: float) -> bool:
-        stop = self.state.get("stop")
+        """Close on the protective stop or the profit target, if either is hit."""
+        stop, take = self.state.get("stop"), self.state.get("take")
         side = _sign(qty)
-        if stop is None or side == FLAT:
+        if side == FLAT:
             return False
-        if (side == LONG and price <= stop) or (side != LONG and price >= stop):
+        if stop is not None and ((side == LONG and price <= stop) or (side != LONG and price >= stop)):
             self._close(qty, f"stop {stop:.4f} hit at {price:.4f}")
-            self._save()
-            return True
-        return False
+        elif take is not None and ((side == LONG and price >= take) or (side != LONG and price <= take)):
+            self._close(qty, f"target {take:.4f} reached at {price:.4f}")
+        else:
+            return False
+        self._save()
+        return True
 
     def on_bar(self, candles: list[Candle], qty: float, equity: float) -> None:
         last = candles[-1]
@@ -103,10 +107,11 @@ class Bot:
             return
         res = self.broker.market_order(self.symbol, size * sig.side)
         # filled during the bar after `last`; matches the backtester's count
-        self.state.update(side=sig.side, stop=sig.stop,
+        self.state.update(side=sig.side, stop=sig.stop, take=sig.take,
                           entry_ts=last.ts + TIMEFRAME_MS[self.tf])
         self.n.alert(f"OPEN {'LONG' if sig.side == LONG else 'SHORT'} {self.symbol} "
-                     f"{size:.6f} @~{price:.4f} stop {sig.stop:.4f} -> {res}")
+                     f"{size:.6f} @~{price:.4f} stop {sig.stop:.4f}"
+                     + (f" target {sig.take:.4f}" if sig.take else "") + f" -> {res}")
 
     def step(self, candles: list[Candle], now_ms: int | None = None) -> None:
         now_ms = now_ms or int(time.time() * 1000)
@@ -120,6 +125,7 @@ class Bot:
             self.n.alert(f"reconcile: broker position {qty:+.6f}, state said "
                          f"{self.state.get('side', FLAT)}")
             self.state.update(side=_sign(qty), stop=self.state.get("stop") if qty else None,
+                              take=self.state.get("take") if qty else None,
                               entry_ts=self.state.get("entry_ts") if qty else None)
 
         if self.guard.halted and qty:

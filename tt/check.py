@@ -139,7 +139,7 @@ def run(cfg: dict) -> int:
         return rep.problems
     rep.ok(f"{len(candles)} recent {tf} candles loaded")
     atr_n = getattr(strat, "atr_n", 14)
-    atr_mult = getattr(strat, "atr_mult", 3.0)
+    atr_mult = getattr(strat, "atr_mult", getattr(strat, "sl", 3.0))  # scalp calls its stop multiple `sl`
     atr = ind.atr(candles, atr_n)[-1]
     stop_pct = atr_mult * atr / candles[-1].close
     order_value, need = min_equity(price, stop_pct, rules, risk)
