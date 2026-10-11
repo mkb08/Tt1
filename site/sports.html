@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sports stink bids</title>
+<meta name="description" content="Live Kalshi and Polymarket prices for today's games, where 30%-below stink bids would sit, the cross-venue lock after fees, a whale feed, and a backtest of the idea.">
+<meta property="og:title" content="Sports stink bids: Kalshi × Polymarket">
+<meta property="og:description" content="Do stink bids catch panicking whales? Live board, whale feed and a backtest on a season of games.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M6 22l6-7 5 4 9-11' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/site.css">
+<style>
+.games { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 12px; }
+.game { padding: 14px 16px 12px; }
+.ghead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.badge { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); }
+.badge.on { color: var(--good); border-color: color-mix(in srgb, var(--good) 45%, var(--border)); }
+.badge.off { color: var(--muted); }
+table.board td.team { text-align: left; }
+table.board td.team b { font-weight: 650; }
+.muted { color: var(--muted); font-size: 13px; }
+td.stink { font-weight: 650; color: var(--accent-ink); }
+td.stink.off { color: var(--muted); text-decoration: line-through; font-weight: 400; }
+.lockline { margin: 8px 0 0; font-size: 13px; color: var(--text-2); }
+.lockline b.pos, td.pos, .value.pos { color: var(--good); }
+.lockline b.neg, td.neg, .value.neg { color: var(--bad); }
+.legend-line { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+.verdict { font-size: 17px; max-width: 70ch; margin: 0 0 16px; }
+#whales table td:nth-child(2) { white-space: normal; }
+.short { display: none; }
+@media (max-width: 520px) {
+  .game { padding: 12px 10px 10px; }
+  table.board { font-size: 13px; }
+  table.board th, table.board td { padding: 7px 3px; }
+  table.board thead th { font-size: 11px; letter-spacing: 0; }
+  table.board .muted, .long { display: none; }
+  .short { display: inline; }
+  .tiles { grid-template-columns: minmax(0, 1fr); }
+  #whales table th:nth-child(6), #whales table td:nth-child(6) { display: none; }
+  #study table th:nth-child(3), #study table td:nth-child(3),
+  #study table th:nth-child(4), #study table td:nth-child(4),
+  #study table th:nth-child(6), #study table td:nth-child(6) { display: none; }
+  #study table th, #study table td { padding: 8px 6px; }
+  #study table td:first-child { white-space: normal; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M6 22l6-7 5 4 9-11" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      tt
+    </a>
+    <nav class="links" aria-label="Sections">
+      <a href="#board">Games</a>
+      <a href="#whales">Whales</a>
+      <a href="#study">Backtest</a>
+      <a href="#run">Run it</a>
+      <a class="gh" href="./">Toolkit</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <h1>Stink bids on sports: do they catch panicking whales?</h1>
+    <p class="lede">The idea, from a <a href="https://x.com/MoonDevOnYT/status/2108988433062355089">10 October 2026 stream</a>: rest a buy 30% below each team's price on Kalshi and Polymarket, keep it up until halftime, and wait for a whale who has to sell. When one fills, buy the other team on the other venue to lock the gap. This page shows those bids on today's games with live prices, and what happened when the rule was tested on a season of real games.</p>
+    <div class="cta">
+      <a class="btn primary" href="#board">Today's games</a>
+      <a class="btn" href="#study">The backtest</a>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="callout" role="note">
+      <h3>What the backtest found</h3>
+      <p class="verdict" id="study-verdict" style="margin:0">Loading…</p>
+    </div>
+  </div>
+
+  <section id="board">
+    <div class="wrap">
+      <div class="live-head">
+        <h2>Today's games on both venues</h2>
+        <span class="live-pill" id="pill" data-state="connecting"><i aria-hidden="true"></i><span>Connecting…</span></span>
+      </div>
+      <p class="sub">Best bid/ask on each venue. <b>Price</b> is the two venues' average mid. <b>Stink bid</b> is 30% below it, where the bot would rest its order; struck through once the first half is over. The bottom line of each card is what buying one team on Kalshi and the other on Polymarket would lock in after both venues' fees. Below zero means no free money.</p>
+      <div class="filters">
+        <div class="seg" id="leagues" role="group" aria-label="League">
+          <button data-lg="nfl" aria-pressed="true">NFL</button>
+          <button data-lg="nba" aria-pressed="false">NBA</button>
+          <button data-lg="mlb" aria-pressed="false">MLB</button>
+          <button data-lg="nhl" aria-pressed="false">NHL</button>
+          <button data-lg="ncaaf" aria-pressed="false">College FB</button>
+        </div>
+        <span class="note" id="games-count"></span>
+      </div>
+      <p class="warnline" id="games-warn"></p>
+      <div class="games" id="games-list"></div>
+      <p class="legend-line">Teams are matched across venues by name and date; a game listed on only one venue shows dashes for the other. Read-only: this page never places an order.</p>
+    </div>
+  </section>
+
+  <section id="whales">
+    <div class="wrap">
+      <h2>Whale feed</h2>
+      <p class="sub">Big trades on the games above, last 15 minutes, both venues, checked every 20 seconds. One order that sweeps several prices counts once. <b>Gap</b> compares the trade with the other venue's current mid for the same team: a SELL well below it is a one-venue dump, the case stink bids are for. A gap only shows for trades in the last 2 minutes.</p>
+      <div class="filters">
+        <div class="seg" id="min-usd" role="group" aria-label="Minimum trade size">
+          <button data-v="500" aria-pressed="false">$500+</button>
+          <button data-v="1000" aria-pressed="true">$1,000+</button>
+          <button data-v="5000" aria-pressed="false">$5,000+</button>
+        </div>
+      </div>
+      <div class="card pad">
+        <div class="table-wrap">
+          <table class="compact">
+            <thead><tr><th>Time</th><th>Game · venue</th><th>Taker</th><th>Price</th><th>Size</th><th>Other venue</th><th>Gap</th></tr></thead>
+            <tbody id="whale-rows"></tbody>
+          </table>
+        </div>
+        <p class="empty" id="whale-empty">No trades this size on these games in the last 15 minutes. Whales cluster around kick-off and during play.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="study">
+    <div class="wrap">
+      <h2>The backtest</h2>
+      <p class="sub" id="study-period">The video's rule on settled Kalshi games.</p>
+      <div class="tiles">
+        <div class="card tile"><div class="label">Bids filled</div><div class="value" id="t-fills">–</div><div class="meta" id="t-fills-meta"></div></div>
+        <div class="card tile"><div class="label">Fills whose team won</div><div class="value" id="t-win">–</div><div class="meta" id="t-win-meta"></div></div>
+        <div class="card tile"><div class="label">Return on money staked, after fees</div><div class="value" id="t-roi">–</div><div class="meta" id="t-roi-meta"></div></div>
+      </div>
+      <div class="card pad">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th></th><th>Fills</th><th>Team won</th><th>Avg price</th><th>Return after fees</th><th>95% range</th></tr></thead>
+            <tbody id="study-rows"></tbody>
+          </table>
+        </div>
+        <p class="cap">Rule: bid 30% below the mid price 2 hours before the start, $2 a bid, both teams, cancelled at halftime, held to settlement. A fill counts only when a trade printed below the bid. Kalshi maker fees included. *Uses what happened after the fill, so you couldn't sort fills this way in real time; it shows where the losses come from.</p>
+        <p class="cap" id="study-hedge"></p>
+        <p class="cap"><a href="https://github.com/mkb08/Tt1/blob/main/docs/STINK_BID_RESEARCH.md">Full method and every variant</a></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="run">
+    <div class="wrap">
+      <h2>Run it yourself</h2>
+      <p class="sub">The same tools run in Termux on your phone. Paper trading is the default and needs no account.</p>
+      <pre><span class="c"># today's games, both venues, the cross-venue lock after fees</span>
+python -m tt games --leagues nfl,nba --live
+
+<span class="c"># whale scanner in the terminal</span>
+python -m tt whales --min-usd 1000
+
+<span class="c"># the stink-bid bot: paper by default</span>
+cp stink.example.json stink.json
+python -m tt stink --config stink.json --dry-run
+scripts/run.sh stink --config stink.json</pre>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Prices come from Kalshi, Polymarket and ESPN's public data and can lag by seconds. Nothing here is financial advice. Check whether prediction markets are legal where you live, and only risk money you can afford to lose.</p>
+  </div>
+</footer>
+<script type="module" src="js/sports.js"></script>
+</body>
+</html>

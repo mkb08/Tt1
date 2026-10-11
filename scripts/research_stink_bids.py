@@ -302,8 +302,14 @@ def report():
                        and p["early"].get("net", 0) > 0 and p["late"].get("net", 0) > 0)
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    if os.path.exists(OUT):  # keep the hedge step's results
+        with open(OUT) as fh:
+            old = json.load(fh)
+        if "hedge" in old:
+            out["hedge"] = old["hedge"]
     with open(OUT, "w") as fh:
         json.dump(out, fh, indent=1)
+    write_site(out)
     print(json.dumps({k: out[k] for k in ("period", "split", "markets", "games")}))
     print(f"\n{'variant':16s} {'elig':>5s} {'fills':>5s} {'fill%':>6s} {'win%':>5s} "
           f"{'avgpx':>6s} {'gross':>7s} {'net':>7s} {'ROI':>7s} {'95% CI':>17s} {'ingame':>6s}")
@@ -326,6 +332,38 @@ def report():
     for lg, s in p["by_league"].items():
         row("  " + lg, s)
     print(f"\npasses the pre-registered rule: {p['passes']}")
+
+
+def write_site(out):
+    """The summary the website's sports page shows (site/data/stink.json)."""
+    a = out["primary"]["all"]
+    pct = lambda x: f"{'+' if x > 0 else '−' if x < 0 else ''}{abs(x) * 100:.1f}%"  # noqa: E731
+    lo, hi = a["roi_net_ci95"]
+    games = sum(out["games"].values())
+    verdict = (f"{'It passed' if out['primary']['passes'] else 'It lost money'}. "
+               f"Of {a['eligible']:,} bids on {games:,} games, {a['fills']:,} filled, "
+               f"{out['primary']['ingame_fills']['fills']:,} of them during play, as the game "
+               f"turned against that team. "
+               f"Fills won {a['win_rate']:.0%} of the time at an average price of "
+               f"{a['avg_price'] * 100:.0f}¢, a return of {pct(a['roi_net'])} after Kalshi's fees "
+               f"(95% range {pct(lo)} to {pct(hi)}). Only {out['primary']['pregame_fills']['fills']} "
+               f"filled before kick-off, where a panicking whale would be the reason.")
+    site = {"verdict": verdict, "primary": out["primary"], "variants": out["variants"],
+            "period_text": f"Settled Kalshi game-winner markets from {out['period'][0]} to "
+                           f"{out['period'][1]}: {games:,} games in the NFL, college football, "
+                           f"NBA, NHL and MLB."}
+    h = out.get("hedge", {}).get("all")
+    if h and h.get("matched_on_polymarket"):
+        site["hedge"] = h
+        site["hedge_text"] = (
+            f"The hedge (step 3): of {h['matched_on_polymarket']:,} NFL and NBA fills with a "
+            f"matching Polymarket market, buying the other team there would have locked a profit "
+            f"of 2¢ a share or more after fees {h['hedge_available']:,} times "
+            f"({h['hedge_share']:.0%}). Usually Polymarket had moved too: the price drop was news, "
+            f"not one venue's whale.")
+    path = os.path.join(ROOT, "site", "data", "stink.json")
+    with open(path, "w") as fh:
+        json.dump(site, fh, separators=(",", ":"))
 
 
 def load_data():
@@ -434,6 +472,8 @@ def hedge():
     res_all["hedge"] = out
     with open(OUT, "w") as fh:
         json.dump(res_all, fh, indent=1)
+    if "primary" in res_all:
+        write_site(res_all)
 
 
 if __name__ == "__main__":
