@@ -193,7 +193,13 @@ Android kills background apps to save battery. To keep the bot alive:
 
 ## Website
 
-The project site (https://tt1-rouge.vercel.app) lives in `site/`: a static page with no build step, deployed on Vercel from this repo. Every push to the default branch redeploys it. To refresh its numbers after downloading new data with `tt fetch`, run:
+The project site (https://tt1-rouge.vercel.app) lives in `site/`: a static page with no build step, deployed on Vercel from this repo. Every push to the default branch redeploys it.
+
+It includes a **live 10 USDT paper-trading demo** that started on 11 October 2026 at 00:00 UTC. It runs the trend and EMA bots on BTC, ETH and SOL against live Binance prices, next to a buy-and-hold benchmark.
+- **How it works.** The account is rebuilt in the visitor's browser from public price history since the start time. Every visitor sees the same account, and it needs no server or database. The live price streams over Binance's WebSocket, with REST polling as a fallback.
+- **Same rules as the bot.** `site/js/engine.js` is a port of the Python engine. `tests/test_site_engine.py` checks that it makes identical trades (it needs Node.js and is skipped without it).
+
+To refresh the backtest numbers after downloading new data with `tt fetch`, run:
 
 ```bash
 python scripts/build_site.py      # rewrites site/data/results.json
