@@ -137,6 +137,16 @@ The `scalp` strategy was tested on real Binance candles:
 - **Before trusting any scalper,** run `python -m tt backtest --data <5m csv> --strategy scalp --fee <your fee>`. It prints, per trade, what the market gave and what costs took.
 - **It's in the toolkit and the live demo so you can watch it,** not because it works. `config.scalp.example.json` runs it in paper mode only.
 
+### Other short-term strategies: tested, none held up
+
+Four more short-term families were also tested, with settings chosen on Oct 2020 to Oct 2024 and judged once on the untouched Oct 2024 to Oct 2026:
+- volatility breakout;
+- 1-hour trend breakout;
+- 1-hour EMA cross;
+- funding carry.
+
+Three lost money after fees. Funding carry stayed positive but earned about 0.15% a year, because funding has been low since 2024. Over the same two years the 4-hour trend breakout was positive on BTC, ETH and SOL. Full method and results: [docs/SHORT_TERM_RESEARCH.md](docs/SHORT_TERM_RESEARCH.md).
+
 ### Risk controls (in `config.json` → `risk`)
 
 | Setting | Default | Meaning |
